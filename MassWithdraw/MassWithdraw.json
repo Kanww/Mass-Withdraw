@@ -1,12 +1,15 @@
 {
-  "Author": "your name here",
-  "Name": "Sample Plugin",
-  "Punchline": "A short one-liner that shows up in /xlplugins.",
-  "Description": "A description that shows up in /xlplugins. List any major slash-command(s).",
+  "Author": "Kanwa",
+  "Name": "Mass Withdraw",
+  "Punchline": "Withdraw items from retainers faster.",
+  "Description": "Adds a /masswithdraw command and simple UI for managing retainer withdrawals.",
   "ApplicableVersion": "any",
+  "InternalName": "MassWithdraw",
+  "AssemblyVersion": "0.0.1.0",
+  "RepoUrl": "https://github.com/Kanww/Mass-Withdraw",
   "Tags": [
-    "sample",
-    "plugin",
-    "goats"
+    "Retainer",
+    "Inventory",
+    "QoL"
   ]
 }
