@@ -31,18 +31,15 @@ public sealed class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        // You might normally want to embed resources and load them from the manifest stream
-        var goatImagePath = Path.Combine(PluginInterface.AssemblyLocation.Directory?.FullName!, "goat.png");
-
         ConfigWindow = new ConfigWindow(this);
-        MainWindow = new MainWindow(this, goatImagePath);
+        MainWindow = new MainWindow();
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "A useful message to display in /xlhelp"
+            HelpMessage = "Open the Mass Withdraw window to transfer all items from your retainer to your inventory."
         });
 
         // Tell the UI system that we want our windows to be drawn throught he window system
@@ -50,7 +47,8 @@ public sealed class Plugin : IDalamudPlugin
 
         // This adds a button to the plugin installer entry of this plugin which allows
         // toggling the display status of the configuration ui
-        PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
+        // PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
+        PluginInterface.UiBuilder.OpenConfigUi += ToggleMainUi;
 
         // Adds another button doing the same but for the main ui of the plugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
@@ -58,7 +56,7 @@ public sealed class Plugin : IDalamudPlugin
         // Add a simple message to the log with level set to information
         // Use /xllog to open the log window in-game
         // Example Output: 00:57:54.959 | INF | [SamplePlugin] ===A cool log message from Sample Plugin===
-        Log.Information($"===A cool log message from {PluginInterface.Manifest.Name}===");
+        Log.Information($"[MassWithdraw] Plugin initialized successfully. Ready for /masswithdraw command.");
     }
 
     public void Dispose()
