@@ -5,6 +5,7 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Lumina.Excel.Sheets;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace MassWithdraw.Windows;
 
@@ -35,10 +36,9 @@ public class MainWindow : Window, IDisposable
     {
         try
         {
-            return Dalamud.Plugin.Services.Service<GameGui>.Get()
-                .GetAddonByName("RetainerList", 1, out var addonPtr)
+            return Plugin.GameGui.GetAddonByName("RetainerList", 1, out var addonPtr)
                 && addonPtr != nint.Zero
-                && ((FFXIVClientStructs.FFXIV.Component.GUI.AtkUnitBase*)addonPtr)->IsVisible;
+                && ((AtkUnitBase*)addonPtr)->IsVisible;
         }
         catch
         {
