@@ -8,7 +8,7 @@
  *
  * Author:      Kanwa
  * Repository:  https://github.com/Kanww/Mass-Withdraw
- * Version:     0.1.0
+ * Version:     1.0.0.0
  *
  * Notes:
  * - Uses FFXIVClientStructs for direct inventory access (unsafe).

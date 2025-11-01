@@ -1,15 +1,27 @@
 {
   "Author": "Kanwa",
   "Name": "Mass Withdraw",
-  "Punchline": "Withdraw items from retainers faster.",
-  "Description": "Adds a /masswithdraw command and simple UI for managing retainer withdrawals.",
-  "ApplicableVersion": "any",
   "InternalName": "MassWithdraw",
-  "AssemblyVersion": "0.0.1.0",
+  "AssemblyVersion": "1.0.0.0",
+  "Description": "A lightweight plugin to safely withdraw all items from a retainer's inventory directly into your player inventory — async, safe, and efficient.",
+  "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/Kanww/Mass-Withdraw",
   "Tags": [
-    "Retainer",
-    "Inventory",
+    "retainer",
+    "inventory",
     "QoL"
-  ]
+  ],
+  "Punchline": "Withdraw items from retainers faster.",
+  "IconUrl": "",
+  "ImageUrls": [],
+  "CategoryTags": [
+    "Inventory",
+    "Utility"
+  ],
+  "DalamudApiLevel": 10,
+  "LoadPriority": 0,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": true,
+  "AcceptsFeedback": true
 }
