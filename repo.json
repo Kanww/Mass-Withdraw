@@ -1,20 +1,18 @@
-{
-  "Plugins": [
-    {
-      "InternalName": "MassWithdraw",
-      "Name": "Mass Withdraw",
-      "Author": "Kanwa",
-      "Description": "Withdraw all items from a retainer’s inventory directly into your player bags — fast, async and safe.",
-      "AssemblyVersion": "1.0.0.0",
-      "ApplicableVersion": "any",
-      "DalamudApiLevel": 10,
-      "RepoUrl": "https://github.com/Kanww/Mass-Withdraw",
-      "DownloadLinkInstall": "https://github.com/Kanww/Mass-Withdraw/raw/master/MassWithdraw.zip",
-      "DownloadLinkUpdate":  "https://github.com/Kanww/Mass-Withdraw/raw/master/MassWithdraw.zip",
-      "ImageUrls": [],
-      "IconUrl": "https://github.com/Kanww/Mass-Withdraw/raw/master/icon.png",
-      "Punchline": "Fast, safe, asynchronous retainer withdrawal.",
-      "Tags": ["retainer", "inventory", "automation"]
-    }
-  ]
-}
+[
+  {
+    "InternalName": "MassWithdraw",
+    "Name": "Mass Withdraw",
+    "Author": "Kanwa",
+    "Description": "Withdraw all items from a retainer’s inventory directly into your player bags — fast, async and safe.",
+    "AssemblyVersion": "1.0.0.0",
+    "ApplicableVersion": "any",
+    "DalamudApiLevel": 10,
+    "RepoUrl": "https://github.com/Kanww/Mass-Withdraw",
+    "DownloadLinkInstall": "https://github.com/Kanww/Mass-Withdraw/raw/master/MassWithdraw.zip",
+    "DownloadLinkUpdate": "https://github.com/Kanww/Mass-Withdraw/raw/master/MassWithdraw.zip",
+    "ImageUrls": [],
+    "IconUrl": "https://github.com/Kanww/Mass-Withdraw/raw/master/icon.png",
+    "Punchline": "Fast, safe, asynchronous retainer withdrawal.",
+    "Tags": ["retainer", "inventory", "automation"]
+  }
+]
