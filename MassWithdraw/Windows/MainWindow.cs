@@ -31,6 +31,21 @@ public class MainWindow : Window, IDisposable
 
     public void Dispose() { }
 
+    private unsafe bool IsRetainerListOpen()
+    {
+        try
+        {
+            return Dalamud.Plugin.Services.Service<GameGui>.Get()
+                .GetAddonByName("RetainerList", 1, out var addonPtr)
+                && addonPtr != nint.Zero
+                && ((FFXIVClientStructs.FFXIV.Component.GUI.AtkUnitBase*)addonPtr)->IsVisible;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public override void Draw()
     {
         ImGui.TextWrapped("Mass Withdraw v0.0.1");
@@ -43,7 +58,10 @@ public class MainWindow : Window, IDisposable
 
         if (ImGui.Button("Start Mass Withdraw"))
         {
-            Plugin.ChatGui.Print("[MassWithdraw] Starting mass withdraw (coming soon).");
+            if (IsRetainerListOpen())
+                Plugin.ChatGui.Print("[MassWithdraw] Retainer List detected — ready for next step!");
+            else
+                Plugin.ChatGui.Print("[MassWithdraw] Please open the Retainer List at a bell first.");
         }
 
         ImGui.SameLine();
