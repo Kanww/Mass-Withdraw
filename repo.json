@@ -9,10 +9,10 @@
       "ApplicableVersion": "any",
       "DalamudApiLevel": 10,
       "RepoUrl": "https://github.com/Kanww/Mass-Withdraw",
-      "DownloadLinkInstall": "https://raw.githubusercontent.com/Kanww/Mass-Withdraw/master/MassWithdraw.zip",
-      "DownloadLinkUpdate": "https://raw.githubusercontent.com/Kanww/Mass-Withdraw/master/MassWithdraw.zip",
+      "DownloadLinkInstall": "https://github.com/Kanww/Mass-Withdraw/raw/master/MassWithdraw.zip",
+      "DownloadLinkUpdate":  "https://github.com/Kanww/Mass-Withdraw/raw/master/MassWithdraw.zip",
       "ImageUrls": [],
-      "IconUrl": "https://raw.githubusercontent.com/Kanww/Mass-Withdraw/master/icon.png",
+      "IconUrl": "https://github.com/Kanww/Mass-Withdraw/raw/master/icon.png",
       "Punchline": "Fast, safe, asynchronous retainer withdrawal.",
       "Tags": ["retainer", "inventory", "automation"]
     }
