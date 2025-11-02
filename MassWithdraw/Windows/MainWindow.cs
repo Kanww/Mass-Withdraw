@@ -1,22 +1,7 @@
-﻿﻿/*
- * MassWithdraw – Retainer Item Transfer Tool
- * ------------------------------------------------------------
- * File:        MainWindow.cs
- * Description: Primary ImGui window and UX for MassWithdraw.
- *              Provides preview (counts + ETA) and an async,
- *              cancellable “withdraw all items” action.
- *
- * Author:      Kanwa
- * Repository:  https://github.com/Kanww/Mass-Withdraw
- * Version:     1.0.0.0
- *
- * Notes:
- * - Uses FFXIVClientStructs for direct inventory access (unsafe).
- * - UI built with Dalamud ImGui helpers.
- */
-
-using System;
+﻿﻿using System;
 using System.Numerics;
+using System.Threading;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -25,79 +10,67 @@ using Lumina.Excel.Sheets;
 namespace MassWithdraw.Windows;
 
 /// <summary>
-/// Main UI window for MassWithdraw. Provides:
-/// - A compact preview (retainer stacks, free bag slots, ETA)
-/// - A single action to withdraw all items asynchronously
-/// - Cancellation while running
+/// MassWithdraw – primary ImGui window.
+/// Clean, focused UX:
+///  - Auto-anchors beside the Retainer Inventory (locked position).
+///  - Idle preview: retainer stacks, bag free slots, ETA.
+///  - One big action (Transfer) + Close or Stop while running.
+///  - Skips Unique items already owned by the player.
 /// </summary>
-public class MainWindow : Window, IDisposable
+public sealed class MainWindow : Window, IDisposable
 {
-    // ------------------------------------------------------------------------
+    // =============================
+    // Constants / Layout
+    // =============================
+    private const string WindowTitle = "Mass Withdraw";
+
+    private const int DefaultMoveDelayMs = 400;         // Pacing between moves
+    private const float MinWidth = 310f;
+    private const float MinHeight = 170f;
+    private const float ButtonWidth = 150f;
+    private const float ButtonSpacing = 12f;
+    private const float AnchorGap = 8f;                 // Gap between Retainer window and ours
+
+    private static readonly string[] RetainerInventoryAddons =
+        { "InventoryRetainer", "InventoryRetainerLarge" };
+
+    // =============================
     // State
-    // ------------------------------------------------------------------------
+    // =============================
+    private bool _isMovingAll;                          // true while async transfer is active
+    private CancellationTokenSource? _moveCts;
+    private int _movedCount;                            // total items moved in current run
 
-    private bool _isMovingAll; // true while async transfer is active
-    private System.Threading.CancellationTokenSource? _moveCts;
-    private int _movedCount;   // total items moved this run
-
-    /// <summary>
-    /// Initialize window chrome and layout constraints.
-    /// </summary>
+    // =============================
+    // Ctor / Dtor
+    // =============================
     public MainWindow()
-        : base("Mass Withdraw",
+        : base(WindowTitle,
             ImGuiWindowFlags.NoScrollbar |
             ImGuiWindowFlags.NoScrollWithMouse |
-            ImGuiWindowFlags.NoCollapse)
+            ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoResize |
+            ImGuiWindowFlags.AlwaysAutoResize)
     {
-        // Keep ESC from closing the window unexpectedly.
-        RespectCloseHotkey = false;
+        RespectCloseHotkey = false;                     // ESC won’t close unexpectedly
 
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(310, 170),
+            MinimumSize = new Vector2(0f, 0f),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
         };
     }
 
     public void Dispose() { }
 
-    // ------------------------------------------------------------------------
-    // Addon Visibility Helpers
-    // ------------------------------------------------------------------------
-
-    /// <summary>
-    /// True if the Retainer List window (at the bell) is visible.
-    /// </summary>
-    private unsafe bool IsRetainerListOpen()
+    // =============================
+    // Addon helpers
+    // =============================
+    private static unsafe bool IsAnyAddonVisible(ReadOnlySpan<string> names, int instances = 2)
     {
         try
         {
-            for (int i = 0; i <= 1; i++)
-            {
-                var addon = Plugin.GameGui.GetAddonByName("RetainerList", i);
-                if (addon != null && addon.Address != nint.Zero &&
-                    ((AtkUnitBase*)addon.Address)->IsVisible)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// True if the retainer inventory window is open (normal or large).
-    /// </summary>
-    private unsafe bool IsInventoryRetainerOpen()
-    {
-        try
-        {
-            string[] names = { "InventoryRetainer", "InventoryRetainerLarge" };
-            for (int i = 0; i <= 1; i++)
+            for (int i = 0; i < instances; i++)
             {
                 foreach (var n in names)
                 {
@@ -109,21 +82,65 @@ public class MainWindow : Window, IDisposable
                     }
                 }
             }
-            return false;
         }
-        catch
-        {
-            return false;
-        }
+        catch { /* fall through */ }
+        return false;
     }
 
-    // ------------------------------------------------------------------------
-    // Item Helpers
-    // ------------------------------------------------------------------------
+    private static unsafe (bool ok, Vector2 pos, Vector2 size) TryGetAddonRect(ReadOnlySpan<string> names, int instances = 2)
+    {
+        try
+        {
+            for (int i = 0; i < instances; i++)
+            {
+                foreach (var n in names)
+                {
+                    var addon = Plugin.GameGui.GetAddonByName(n, i);
+                    if (addon == null || addon.Address == nint.Zero)
+                        continue;
 
-    /// <summary>
-    /// Returns true if <paramref name="itemId"/> is marked as Unique in the Item sheet.
-    /// </summary>
+                    var unit = (AtkUnitBase*)addon.Address;
+                    if (!unit->IsVisible)
+                        continue;
+
+                    var pos = new Vector2(unit->X, unit->Y);
+                    var size = new Vector2(unit->RootNode->Width, unit->RootNode->Height);
+                    return (true, pos, size);
+                }
+            }
+        }
+        catch { /* fall through */ }
+        return (false, Vector2.Zero, Vector2.Zero);
+    }
+
+    /// <summary>Exposed for the watcher; returns true if Retainer Inventory is open.</summary>
+    public static unsafe bool IsInventoryRetainerOpenForWatcher()
+        => IsAnyAddonVisible(RetainerInventoryAddons);
+
+    private unsafe bool IsInventoryRetainerOpen()
+        => IsAnyAddonVisible(RetainerInventoryAddons);
+
+    // =============================
+    // Positioning – lock beside Retainer Inventory
+    // =============================
+    public override void PreDraw()
+    {
+        // Window padding: 8px on each side
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(8f, 8f));
+        var rect = TryGetAddonRect(RetainerInventoryAddons);
+        if (!rect.ok)
+            return;
+
+        // Lock to the right side of the Retainer Inventory window.
+        var anchorPos = new Vector2(rect.pos.X + rect.size.X + AnchorGap, rect.pos.Y);
+
+        // We explicitly set the next window position before ImGui.Begin so it sticks.
+        ImGui.SetNextWindowPos(anchorPos, ImGuiCond.Always);
+    }
+
+    // =============================
+    // Item helpers
+    // =============================
     private static bool IsUnique(uint itemId)
     {
         var sheet = Plugin.DataManager.GetExcelSheet<Item>();
@@ -131,11 +148,7 @@ public class MainWindow : Window, IDisposable
         return row?.IsUnique ?? false;
     }
 
-    /// <summary>
-    /// Returns true if the player currently holds an item with <paramref name="itemId"/>
-    /// in Inventory1–4 (main bag pages).
-    /// </summary>
-    private unsafe static bool PlayerHasItem(uint itemId)
+    private static unsafe bool PlayerHasItem(uint itemId)
     {
         var inv = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
         if (inv == null) return false;
@@ -159,18 +172,10 @@ public class MainWindow : Window, IDisposable
         return false;
     }
 
-    // ------------------------------------------------------------------------
+    // =============================
     // Preview / ETA
-    // ------------------------------------------------------------------------
-
-    /// <summary>
-    /// Compute a quick preview:
-    /// - retStacks: non-empty retainer stacks
-    /// - bagFree:   free slots in player inventory
-    /// - willMove:  stacks that can actually be moved (no merge logic yet)
-    /// - eta:       estimated duration at the given delay per move
-    /// </summary>
-    private unsafe (int retStacks, int bagFree, int willMove, TimeSpan eta) ComputePreview(int delayMs)
+    // =============================
+    private static unsafe (int retStacks, int bagFree, int willMove, TimeSpan eta) ComputePreview(int delayMs)
     {
         int retStacks = 0;
         int bagFree = 0;
@@ -178,7 +183,7 @@ public class MainWindow : Window, IDisposable
         var inv = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
         if (inv == null) return (0, 0, 0, TimeSpan.Zero);
 
-        // Count retainer stacks
+        // Count retainer stacks across pages 1–7
         int tStart = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage1;
         int tEnd   = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage7;
 
@@ -195,7 +200,7 @@ public class MainWindow : Window, IDisposable
             }
         }
 
-        // Count free player bag slots
+        // Count free slots in Inventory1–4
         for (int i = 0; i < 4; i++)
         {
             var invType = (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)
@@ -214,30 +219,22 @@ public class MainWindow : Window, IDisposable
 
         int willMove = Math.Min(retStacks, bagFree);
         var eta = TimeSpan.FromMilliseconds((long)willMove * delayMs);
-
         return (retStacks, bagFree, willMove, eta);
     }
 
-    // ------------------------------------------------------------------------
-    // Transfer Logic
-    // ------------------------------------------------------------------------
-
-    /// <summary>
-    /// Asynchronously transfer all items from the currently open retainer to player inventory.
-    /// - Skips Unique items if the player already holds one
-    /// - Honors a per-move delay to avoid UI/network pressure
-    /// - Cancellable via Stop button
-    /// </summary>
+    // =============================
+    // Transfer logic
+    // =============================
     private void StartMoveAllRetainerItemsAsync(int delayMs)
     {
         if (_isMovingAll) return;
 
         _isMovingAll = true;
         _movedCount = 0;
-        _moveCts = new System.Threading.CancellationTokenSource();
+        _moveCts = new CancellationTokenSource();
         var token = _moveCts.Token;
 
-        System.Threading.Tasks.Task.Run(() =>
+        _ = Task.Run(() =>
         {
             unsafe
             {
@@ -303,7 +300,6 @@ public class MainWindow : Window, IDisposable
                                 return;
                             }
 
-                            // Move full stack. We don’t trust return code; we pace via delay.
                             _ = inv->MoveItemSlot(
                                 srcType,
                                 (ushort)slot,
@@ -314,20 +310,17 @@ public class MainWindow : Window, IDisposable
 
                             _movedCount++;
 
-                            // Pace the queue; prevents UI hitching and server churn.
-                            System.Threading.Tasks.Task
-                                .Delay(delayMs, token)
-                                .Wait(token);
+                            Task.Delay(delayMs, token).Wait(token);
                         }
                     }
 
                     Plugin.ChatGui.Print($"[MassWithdraw] Done. Moved total: {_movedCount} item(s).");
                 }
-                catch (System.OperationCanceledException)
+                catch (OperationCanceledException)
                 {
                     Plugin.ChatGui.Print($"[MassWithdraw] Cancelled. Moved so far: {_movedCount} item(s).");
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
                     Plugin.ChatGui.Print($"[MassWithdraw] Error in async move: {ex.Message}");
                 }
@@ -341,21 +334,14 @@ public class MainWindow : Window, IDisposable
         });
     }
 
-    // ------------------------------------------------------------------------
+    // =============================
     // UI
-    // ------------------------------------------------------------------------
-
-    /// <summary>
-    /// Draw ImGui layout: preview (when idle) + Begin/Close or Stop while running.
-    /// </summary>
+    // =============================
     public override void Draw()
     {
-        const int DelayMs = 400; // default pacing; tweak via config later
-        ImGui.SetWindowSize(new Vector2(310, 170), ImGuiCond.Once);
-
+        const int DelayMs = DefaultMoveDelayMs;
         bool hasInventoryRetainer = IsInventoryRetainerOpen();
 
-        // Preview (computed only when idle and inventory is open)
         int retStacks = 0, bagFree = 0, willMove = 0;
         TimeSpan eta = TimeSpan.Zero;
 
@@ -367,7 +353,7 @@ public class MainWindow : Window, IDisposable
             willMove  = p.willMove;
             eta       = p.eta;
 
-            // Align labels by padding to same width
+            // Pretty, centered preview
             string label1 = "Items in Retainer:";
             string label2 = "Player Inventory (Free Slots):";
             int pad = Math.Max(label1.Length, label2.Length);
@@ -376,48 +362,36 @@ public class MainWindow : Window, IDisposable
             string line2 = $"{label2.PadRight(pad)} {bagFree}";
             string line3 = $"Will move: {willMove} items (ETA ~ {Math.Max(0, (int)eta.TotalSeconds)}s)";
 
-            float winW = ImGui.GetWindowSize().X;
-            var w1 = ImGui.CalcTextSize(line1).X; ImGui.SetCursorPosX(MathF.Max(0, (winW - w1) * 0.5f)); ImGui.TextUnformatted(line1);
-            var w2 = ImGui.CalcTextSize(line2).X; ImGui.SetCursorPosX(MathF.Max(0, (winW - w2) * 0.5f)); ImGui.TextUnformatted(line2);
-            var w3 = ImGui.CalcTextSize(line3).X; ImGui.SetCursorPosX(MathF.Max(0, (winW - w3) * 0.5f)); ImGui.TextUnformatted(line3);
-            ImGui.Spacing();
-        }
-        else if (!_isMovingAll && !hasInventoryRetainer)
-        {
-            // Gentle reminder if user hasn't opened the retainer inventory yet
-            var warn = "Open your Retainer’s inventory window first.";
-            var warnW = ImGui.CalcTextSize(warn).X;
-            ImGui.SetCursorPosX(MathF.Max(0, (ImGui.GetWindowSize().X - warnW) * 0.5f));
-            ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), warn);
+            CenteredText(line1);
+            CenteredText(line2);
+            CenteredText(line3);
             ImGui.Spacing();
         }
 
-        float windowWidth = ImGui.GetWindowSize().X;
+        float contentWidth = ImGui.GetContentRegionAvail().X;
 
         if (!_isMovingAll)
         {
-            // Centered button group: Begin / Close
-            float buttonWidth = 150f;
-            float spacing = 12f;
-            float groupWidth = (buttonWidth * 2f) + spacing;
-            ImGui.SetCursorPosX(MathF.Max(0f, (windowWidth - groupWidth) * 0.5f));
+            // Two centered buttons: Begin / Close
+            float groupWidth = (ButtonWidth * 2f) + ButtonSpacing;
+            ImGui.SetCursorPosX(MathF.Max(8f, (contentWidth - groupWidth) * 0.5f + 8f));
 
             bool disableBegin = !hasInventoryRetainer || willMove <= 0;
 
             if (disableBegin)
             {
                 ImGui.BeginDisabled();
-                ImGui.Button("Begin Withdraw", new Vector2(buttonWidth, 0));
+                ImGui.Button("Transfer", new Vector2(ButtonWidth, 0));
                 ImGui.EndDisabled();
             }
-            else if (ImGui.Button("Begin Withdraw", new Vector2(buttonWidth, 0)))
+            else if (ImGui.Button("Transfer", new Vector2(ButtonWidth, 0)))
             {
                 StartMoveAllRetainerItemsAsync(DelayMs);
             }
 
-            ImGui.SameLine(0, spacing);
+            ImGui.SameLine(0, ButtonSpacing);
 
-            if (ImGui.Button("Close", new Vector2(buttonWidth, 0)))
+            if (ImGui.Button("Close", new Vector2(ButtonWidth, 0)))
                 IsOpen = false;
 
             if (disableBegin)
@@ -426,24 +400,46 @@ public class MainWindow : Window, IDisposable
                 var msg = hasInventoryRetainer
                     ? "Retainer inventory is empty or your bags are full."
                     : "Open your Retainer’s inventory window first.";
-                var msgW = ImGui.CalcTextSize(msg).X;
-                ImGui.SetCursorPosX(MathF.Max(0f, (windowWidth - msgW) * 0.5f));
-                ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), msg);
+                CenteredColoredText(msg, new Vector4(1f, 0.8f, 0.3f, 1f));
             }
         }
         else
         {
             // Progress + centered Stop button
-            var msg = $"Moving items... {_movedCount} transferred so far.";
-            var msgW = ImGui.CalcTextSize(msg).X;
-            ImGui.SetCursorPosX(MathF.Max(0f, (windowWidth - msgW) * 0.5f));
-            ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), msg);
+            CenteredColoredText($"Moving items... {_movedCount} transferred so far.", new Vector4(0.4f, 1f, 0.4f, 1f));
             ImGui.Spacing();
 
             float stopWidth = 160f;
-            ImGui.SetCursorPosX(MathF.Max(0f, (windowWidth - stopWidth) * 0.5f));
+            ImGui.SetCursorPosX(MathF.Max(0f, (contentWidth - stopWidth) * 0.5f));
             if (ImGui.Button("Stop Transfer", new Vector2(stopWidth, 0)))
                 _moveCts?.Cancel();
         }
+        }
+
+    public override void PostDraw()
+    {
+        // Pop our WindowPadding style var
+        ImGui.PopStyleVar();
+    }
+
+    // =============================
+    // Small UI helpers
+    // =============================
+    private static void CenteredText(string text)
+    {
+        float contentW = ImGui.GetContentRegionAvail().X;
+        var w = ImGui.CalcTextSize(text).X;
+        var x = MathF.Max(0, (contentW - w) * 0.5f);
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + x);
+        ImGui.TextUnformatted(text);
+    }
+
+    private static void CenteredColoredText(string text, Vector4 color)
+    {
+        float contentW = ImGui.GetContentRegionAvail().X;
+        var w = ImGui.CalcTextSize(text).X;
+        var x = MathF.Max(0, (contentW - w) * 0.5f);
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + x);
+        ImGui.TextColored(color, text);
     }
 }

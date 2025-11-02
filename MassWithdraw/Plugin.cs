@@ -5,6 +5,7 @@ using System.IO;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using MassWithdraw.Windows;
+using MassWithdraw;
 
 namespace MassWithdraw;
 
@@ -18,6 +19,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] internal static IFramework Framework { get; private set; } = null!;
 
     private const string CommandName = "/masswithdraw";
 
@@ -26,6 +28,8 @@ public sealed class Plugin : IDalamudPlugin
     public readonly WindowSystem WindowSystem = new("MassWithdraw");
     private ConfigWindow ConfigWindow { get; init; }
     private MainWindow MainWindow { get; init; }
+
+    private RetainerWatcher? retainerWatcher;
 
     public Plugin()
     {
@@ -47,11 +51,20 @@ public sealed class Plugin : IDalamudPlugin
 
         // This adds a button to the plugin installer entry of this plugin which allows
         // toggling the display status of the configuration ui
-        // PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
-        PluginInterface.UiBuilder.OpenConfigUi += ToggleMainUi;
+        PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
 
         // Adds another button doing the same but for the main ui of the plugin
-        PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
+        // PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
+        PluginInterface.UiBuilder.OpenMainUi += ToggleConfigUi;
+
+        //
+        this.retainerWatcher = new RetainerWatcher(
+            framework: Framework,
+            isRetainerOpen: MassWithdraw.Windows.MainWindow.IsInventoryRetainerOpenForWatcher,
+            setMainWindowOpen: open => this.MainWindow.IsOpen = open,
+            isEnabled: () => this.Configuration.AutoOpenOnRetainer   // NEW
+        );
+
 
         // Add a simple message to the log with level set to information
         // Use /xllog to open the log window in-game
@@ -72,12 +85,16 @@ public sealed class Plugin : IDalamudPlugin
         MainWindow.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
+
+        this.retainerWatcher?.Dispose();
+        this.retainerWatcher = null;
     }
 
     private void OnCommand(string command, string args)
     {
-        // In response to the slash command, toggle the display status of our main ui
-        MainWindow.Toggle();
+        // In response to the slash command, toggle the display status of our main or config ui
+        // MainWindow.Toggle();
+        ConfigWindow.Toggle();
     }
     
     public void ToggleConfigUi() => ConfigWindow.Toggle();

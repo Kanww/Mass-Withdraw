@@ -3,9 +3,10 @@
   "Name": "Mass Withdraw",
   "Punchline": "Fast and safe retainer inventory withdraw.",
   "Description": "Withdraw all items from your retainer into your inventory with preview, async pacing, and unique-item protection.",
-  "RepoUrl": "https://github.com/Kanww/Mass-Withdraw",
-  "Tags": ["retainer", "inventory", "automation", "utility"],
-  "CategoryTags": ["Inventory", "Utility"],
-  "IconUrl": "",
-  "ImageUrls": []
+  "ApplicableVersion": "any",
+  "Tags": [
+    "retainer",
+    "inventory",
+    "utility"
+  ]
 }
