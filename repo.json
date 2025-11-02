@@ -1,0 +1,20 @@
+[
+  {
+    "Author": "Kanwa",
+    "Name": "Mass Withdraw",
+    "Description": "Withdraw all items from a retainer’s inventory directly into your player bags — fast, async and safe.",
+    "InternalName": "MassWithdraw",
+    "AssemblyVersion": "1.0.0.0",
+    "TestingAssemblyVersion": null,
+    "RepoUrl": "https://github.com/Kanww/Mass-Withdraw",
+    "ApplicableVersion": "any",
+    "DalamudApiLevel": 10,
+    "Punchline": "Fast, safe, asynchronous retainer withdrawal.",
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "DownloadLinkInstall": "https://github.com/Kanww/Mass-Withdraw/raw/master/release/MassWithdraw.zip",
+    "DownloadLinkTesting": "https://github.com/Kanww/Mass-Withdraw/raw/master/testing/MassWithdraw.zip",
+    "DownloadLinkUpdate": "https://github.com/Kanww/Mass-Withdraw/raw/master/release/MassWithdraw.zip",
+    "LastUpdate": "1701231234"
+  }
+]
