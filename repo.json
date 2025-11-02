@@ -1,0 +1,18 @@
+[
+  {
+    "Author": "Kanwa",
+    "Name": "Mass Withdraw",
+    "InternalName": "MassWithdraw",
+    "Description": "Withdraw all items from your retainer into your inventory with preview, async pacing, and unique-item protection.",
+    "ApplicableVersion": "any",
+    "RepoUrl": "https://kanww.github.io/Mass-Withdraw/",
+    "Tags": ["retainer", "inventory", "utility"],
+    "DalamudApiLevel": 13,
+    "DownloadLinkInstall": "https://kanww.github.io/Mass-Withdraw/releases/latest.zip",
+    "DownloadLinkTesting": "https://kanww.github.io/Mass-Withdraw/releases/latest.zip",
+    "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/latest.zip",
+    "LoadPriority": 0,
+    "Punchline": "Fast and safe retainer inventory withdraw.",
+    "Changelog": "Initial public release"
+  }
+]
