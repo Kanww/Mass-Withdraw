@@ -1,43 +1,43 @@
 # MassWithdraw
 
-**MassWithdraw** is a lightweight Dalamud plugin for **Final Fantasy XIV** that automates withdrawing all items from a retainer’s inventory directly into the player inventory — safely, asynchronously, and with respect for unique items.
+**Mass Withdraw** is a lightweight and fast retainer inventory tool for Final Fantasy XIV.  
+It allows you to **withdraw all items from your current retainer** directly into your inventory.
 
 ---
 
 ## ✨ Features
 
-- One-click **mass withdraw** from the active retainer’s inventory
-- **Asynchronous transfers** with per-item delay (400 ms)
-- **Pre-check preview**: shows how many stacks can be moved, free bag slots, and estimated time
-- **Unique item protection** — automatically skips items that cannot be duplicated
-- **Safe cancel option** during transfer
+- **Instant Preview** — shows retainer stack count, free bag slots, and estimated transfer time (ETA).  
+- **Fast, Async Transfers** — moves items automatically at safe intervals.  
+- **Unique-Item skip** — automatically skips unique items already owned.  
+- **Auto Anchor** — the window snaps neatly beside the Retainer Inventory window.  
+- **Auto Open (optional)** — automatically opens when you open a retainer inventory.  
 
 ---
 
-## 🕹️ Usage
-
-1. Log in and open a **Retainer Bell**.  
-2. Select a retainer and open their **Inventory**.  
-3. Use the command `/masswithdraw`.  
-4. Click **Begin Withdraw** to transfer all available items.  
-5. Click **Stop Transfer** at any time to cancel safely.
-
-The window cannot be closed with **Esc**, to prevent accidental interruption during transfers.
-
----
-
-## 🧩 Command
+## 🔧 Commands
 
 | Command | Description |
-|----------|--------------|
-| `/masswithdraw` | Opens the main MassWithdraw window |
+|----------|-------------|
+| `/masswithdraw` | Opens the configuration window. |
 
 ---
 
-## 🔧 Configuration
+## 🪙 Installation
 
-MassWithdraw currently has no configuration window.  
-Future updates may include adjustable transfer delay, UI theme options, and detailed logging.
+1. Open `/xlsettings → Développeur → Plugins personnalisés`
+2. Add the following URL: https://kanww.github.io/Mass-Withdraw/repo.json
+3. Click **Save**.
+4. Open `/xlplugins`, search **Mass Withdraw**, and install.
+
+---
+
+## 🪄 License
+
+This project is licensed under the **MIT License**.
+
+You are free to use, modify, and distribute this plugin under the terms of that license.
+See the [LICENSE](LICENSE) file for full text.
 
 ---
 
