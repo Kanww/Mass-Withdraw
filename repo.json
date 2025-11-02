@@ -13,6 +13,7 @@
     "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/latest.zip",
     "LoadPriority": 0,
     "Punchline": "Fast and safe retainer inventory withdraw.",
+    "AssemblyVersion": "1.0.0.0",
     "Changelog": "Initial public release"
   }
 ]
