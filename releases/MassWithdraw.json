@@ -15,7 +15,7 @@
   "LoadSync": false,
   "CanUnloadAsync": false,
   "LoadPriority": 0,
-  "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon.png",
+  "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png",
   "Punchline": "Fast and safe retainer inventory withdraw.",
   "AcceptsFeedback": true
 }
