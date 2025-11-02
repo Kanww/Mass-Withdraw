@@ -37,7 +37,8 @@ It allows you to **withdraw all items from your current retainer** directly into
 This project is licensed under the **MIT License**.
 
 You are free to use, modify, and distribute this plugin under the terms of that license.
-See the [LICENSE](LICENSE) file for full text.
+
+See the [LICENSE.md](LICENSE.md) file for full text.
 
 ---
 
