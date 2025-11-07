@@ -1,7 +1,10 @@
 ﻿﻿using System;
 using System.Numerics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using Dalamud.Interface;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -9,41 +12,30 @@ using Lumina.Excel.Sheets;
 
 namespace MassWithdraw.Windows;
 
-/// <summary>
-/// MassWithdraw – primary ImGui window.
-/// Clean, focused UX:
-///  - Auto-anchors beside the Retainer Inventory (locked position).
-///  - Idle preview: retainer stacks, bag free slots, ETA.
-///  - One big action (Transfer) + Close or Stop while running.
-///  - Skips Unique items already owned by the player.
-/// </summary>
 public sealed class MainWindow : Window, IDisposable
 {
-    // =============================
-    // Constants / Layout
-    // =============================
-    private const string WindowTitle = "Mass Withdraw";
 
-    private const int DefaultMoveDelayMs = 400;         // Pacing between moves
+    private const string WindowTitle = "Mass Withdraw";
+    private const int DefaultMoveDelayMs = 400;
     private const float MinWidth = 310f;
     private const float MinHeight = 170f;
     private const float ButtonWidth = 150f;
     private const float ButtonSpacing = 12f;
-    private const float AnchorGap = 8f;                 // Gap between Retainer window and ours
-
+    private const float AnchorGap = 8f;
     private static readonly string[] RetainerInventoryAddons =
         { "InventoryRetainer", "InventoryRetainerLarge" };
-
-    // =============================
-    // State
-    // =============================
-    private bool _isMovingAll;                          // true while async transfer is active
+    private bool _isMovingAll;
     private CancellationTokenSource? _moveCts;
-    private int _movedCount;                            // total items moved in current run
+    private int _movedCount;
+    private int _totalToMove = 0;
+    private readonly HashSet<uint> _selectedCats = new();
+    private readonly Dictionary<uint, string> _catNames = new();
+    private bool _useCategoryFilter = false;
+    private static string _catSearch = string.Empty;
+    private readonly Dictionary<uint, int> _retCatCounts = new();
+    private readonly List<uint> _favoriteCats = new();
+    private bool _showFilterPanel = false;
 
-    // =============================
-    // Ctor / Dtor
-    // =============================
     public MainWindow()
         : base(WindowTitle,
             ImGuiWindowFlags.NoScrollbar |
@@ -52,8 +44,7 @@ public sealed class MainWindow : Window, IDisposable
             ImGuiWindowFlags.NoResize |
             ImGuiWindowFlags.AlwaysAutoResize)
     {
-        RespectCloseHotkey = false;                     // ESC won’t close unexpectedly
-
+        RespectCloseHotkey = false;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(0f, 0f),
@@ -63,9 +54,6 @@ public sealed class MainWindow : Window, IDisposable
 
     public void Dispose() { }
 
-    // =============================
-    // Addon helpers
-    // =============================
     private static unsafe bool IsAnyAddonVisible(ReadOnlySpan<string> names, int instances = 2)
     {
         try
@@ -113,34 +101,24 @@ public sealed class MainWindow : Window, IDisposable
         return (false, Vector2.Zero, Vector2.Zero);
     }
 
-    /// <summary>Exposed for the watcher; returns true if Retainer Inventory is open.</summary>
     public static unsafe bool IsInventoryRetainerOpenForWatcher()
         => IsAnyAddonVisible(RetainerInventoryAddons);
 
     private unsafe bool IsInventoryRetainerOpen()
         => IsAnyAddonVisible(RetainerInventoryAddons);
 
-    // =============================
-    // Positioning – lock beside Retainer Inventory
-    // =============================
     public override void PreDraw()
     {
-        // Window padding: 8px on each side
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(8f, 8f));
         var rect = TryGetAddonRect(RetainerInventoryAddons);
         if (!rect.ok)
             return;
 
-        // Lock to the right side of the Retainer Inventory window.
         var anchorPos = new Vector2(rect.pos.X + rect.size.X + AnchorGap, rect.pos.Y);
 
-        // We explicitly set the next window position before ImGui.Begin so it sticks.
         ImGui.SetNextWindowPos(anchorPos, ImGuiCond.Always);
     }
 
-    // =============================
-    // Item helpers
-    // =============================
     private static bool IsUnique(uint itemId)
     {
         var sheet = Plugin.DataManager.GetExcelSheet<Item>();
@@ -172,18 +150,62 @@ public sealed class MainWindow : Window, IDisposable
         return false;
     }
 
-    // =============================
-    // Preview / ETA
-    // =============================
-    private static unsafe (int retStacks, int bagFree, int willMove, TimeSpan eta) ComputePreview(int delayMs)
+    private void EnsureCategoryCache()
     {
-        int retStacks = 0;
-        int bagFree = 0;
+        if (_catNames.Count > 0) return;
+        var uiCatSheet = Plugin.DataManager.GetExcelSheet<ItemUICategory>();
+        if (uiCatSheet == null) return;
+
+        foreach (var row in uiCatSheet)
+        {
+            try
+            {
+                var id = row.RowId;
+                if (id == 0) continue;
+
+                var name = row.Name.ToString();
+                if (string.IsNullOrWhiteSpace(name)) name = $"Category {id}";
+
+                _catNames[id] = name;
+            }
+            catch
+            {
+                //
+            }
+        }
+    }
+
+    private static uint GetItemCategoryId(uint itemId)
+    {
+        var sheet = Plugin.DataManager.GetExcelSheet<Item>();
+        if (sheet == null) return 0;
+
+        try
+        {
+            var it = sheet.GetRow(itemId);
+            return it.ItemUICategory.RowId;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private bool ShouldTransfer(uint itemId)
+    {
+        if (!_useCategoryFilter) return true;
+        if (_selectedCats.Count == 0) return false;
+        var catId = GetItemCategoryId(itemId);
+        return catId != 0 && _selectedCats.Contains(catId);
+    }
+
+    private unsafe void RecomputeRetainerCategoryCounts()
+    {
+        _retCatCounts.Clear();
 
         var inv = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
-        if (inv == null) return (0, 0, 0, TimeSpan.Zero);
+        if (inv == null) return;
 
-        // Count retainer stacks across pages 1–7
         int tStart = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage1;
         int tEnd   = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage7;
 
@@ -195,12 +217,62 @@ public sealed class MainWindow : Window, IDisposable
             for (int s = 0; s < cont->Size; s++)
             {
                 var it = cont->GetInventorySlot(s);
-                if (it != null && it->ItemId != 0 && it->Quantity > 0)
+                if (it == null || it->ItemId == 0 || it->Quantity == 0) continue;
+
+                var catId = GetItemCategoryId(it->ItemId);
+                if (catId == 0) continue;
+
+                if (_retCatCounts.TryGetValue(catId, out var c)) _retCatCounts[catId] = c + 1;
+                else _retCatCounts[catId] = 1;
+            }
+        }
+    }
+
+    private void UpdateFavoriteCats(int maxChips = 6)
+    {
+        _favoriteCats.Clear();
+        foreach (var id in _retCatCounts
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => _catNames.TryGetValue(kv.Key, out var nm) ? nm : kv.Key.ToString(), StringComparer.OrdinalIgnoreCase)
+            .Select(kv => kv.Key)
+            .Where(id => _catNames.ContainsKey(id))
+            .Take(maxChips))
+        {
+            _favoriteCats.Add(id);
+        }
+    }
+
+    private void SetCats(IEnumerable<uint> ids)
+    {
+        _useCategoryFilter = true;
+        _selectedCats.Clear();
+        foreach (var id in ids) _selectedCats.Add(id);
+    }
+
+    private unsafe (int retStacks, int bagFree, int willMove, TimeSpan eta) ComputePreview(int delayMs)
+    {
+        int retStacks = 0;
+        int bagFree = 0;
+
+        var inv = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
+        if (inv == null) return (0, 0, 0, TimeSpan.Zero);
+
+        int tStart = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage1;
+        int tEnd   = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage7;
+
+        for (int t = tStart; t <= tEnd; t++)
+        {
+            var cont = inv->GetInventoryContainer((FFXIVClientStructs.FFXIV.Client.Game.InventoryType)t);
+            if (cont == null) continue;
+
+            for (int s = 0; s < cont->Size; s++)
+            {
+                var it = cont->GetInventorySlot(s);
+                if (it != null && it->ItemId != 0 && it->Quantity > 0 && ShouldTransfer(it->ItemId))
                     retStacks++;
             }
         }
 
-        // Count free slots in Inventory1–4
         for (int i = 0; i < 4; i++)
         {
             var invType = (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)
@@ -222,16 +294,16 @@ public sealed class MainWindow : Window, IDisposable
         return (retStacks, bagFree, willMove, eta);
     }
 
-    // =============================
-    // Transfer logic
-    // =============================
     private void StartMoveAllRetainerItemsAsync(int delayMs)
     {
         if (_isMovingAll) return;
 
+        var prev = ComputePreview(delayMs);
+        _totalToMove = prev.willMove;
+
         _isMovingAll = true;
         _movedCount = 0;
-        _moveCts = new CancellationTokenSource();
+        _moveCts = new System.Threading.CancellationTokenSource();
         var token = _moveCts.Token;
 
         _ = Task.Run(() =>
@@ -266,14 +338,15 @@ public sealed class MainWindow : Window, IDisposable
                             if (item == null || item->ItemId == 0 || item->Quantity == 0)
                                 continue;
 
-                            // Unique safeguard: skip if already owned
+                            if (!ShouldTransfer(item->ItemId))
+                                continue;
+
                             if (IsUnique(item->ItemId) && PlayerHasItem(item->ItemId))
                             {
                                 Plugin.ChatGui.Print($"[MassWithdraw] Skipped unique item (ItemId {item->ItemId}) — already in player inventory.");
                                 continue;
                             }
 
-                            // Find first free player slot (Inventory1–4)
                             int dstTypeInt = -1, dstSlot = -1;
                             for (int i = 0; i < 4 && dstSlot < 0; i++)
                             {
@@ -329,14 +402,12 @@ public sealed class MainWindow : Window, IDisposable
                     _isMovingAll = false;
                     _moveCts?.Dispose();
                     _moveCts = null;
+                    _totalToMove = 0;
                 }
             }
         });
     }
 
-    // =============================
-    // UI
-    // =============================
     public override void Draw()
     {
         const int DelayMs = DefaultMoveDelayMs;
@@ -353,26 +424,18 @@ public sealed class MainWindow : Window, IDisposable
             willMove  = p.willMove;
             eta       = p.eta;
 
-            // Pretty, centered preview
-            string label1 = "Items in Retainer:";
-            string label2 = "Player Inventory (Free Slots):";
-            int pad = Math.Max(label1.Length, label2.Length);
-
-            string line1 = $"{label1.PadRight(pad)} {retStacks}";
-            string line2 = $"{label2.PadRight(pad)} {bagFree}";
-            string line3 = $"Will move: {willMove} items (ETA ~ {Math.Max(0, (int)eta.TotalSeconds)}s)";
-
-            CenteredText(line1);
-            CenteredText(line2);
-            CenteredText(line3);
-            ImGui.Spacing();
+            if (willMove > 0)
+            {
+                var line = $"Will move {willMove} item{(willMove == 1 ? "" : "s")} (ETA ~ {Math.Max(0, (int)eta.TotalSeconds)}s)";
+                CenteredColoredText(line, new Vector4(0.8f, 0.9f, 1f, 1f));
+                ImGui.Spacing();
+            }
         }
 
         float contentWidth = ImGui.GetContentRegionAvail().X;
 
         if (!_isMovingAll)
         {
-            // Two centered buttons: Begin / Close
             float groupWidth = (ButtonWidth * 2f) + ButtonSpacing;
             ImGui.SetCursorPosX(MathF.Max(8f, (contentWidth - groupWidth) * 0.5f + 8f));
 
@@ -397,16 +460,40 @@ public sealed class MainWindow : Window, IDisposable
             if (disableBegin)
             {
                 ImGui.Spacing();
-                var msg = hasInventoryRetainer
-                    ? "Retainer inventory is empty or your bags are full."
-                    : "Open your Retainer’s inventory window first.";
+
+                string msg;
+                if (!hasInventoryRetainer)
+                {
+                    msg = "Open your Retainer’s inventory window first.";
+                }
+                else if (_useCategoryFilter && _selectedCats.Count == 0)
+                {
+                    msg = "Select at least one category.";
+                }
+                else if (_useCategoryFilter && _selectedCats.Count > 0 && retStacks == 0)
+                {
+                    msg = "No items match the selected category.";
+                }
+                else
+                {
+                    msg = "Retainer inventory is empty or your bags are full.";
+                }
+
                 CenteredColoredText(msg, new Vector4(1f, 0.8f, 0.3f, 1f));
             }
         }
+        
         else
         {
-            // Progress + centered Stop button
-            CenteredColoredText($"Moving items... {_movedCount} transferred so far.", new Vector4(0.4f, 1f, 0.4f, 1f));
+            float frac = (_totalToMove > 0) ? (float)_movedCount / _totalToMove : 0f;
+            if (frac < 0f) frac = 0f;
+            if (frac > 1f) frac = 1f;
+
+            string overlay = (_totalToMove > 0)
+                ? $"{_movedCount}/{_totalToMove}  ({(int)(frac * 100f)}%)"
+                : $"{_movedCount} moved";
+
+            ImGui.ProgressBar(frac, new Vector2(contentWidth, 22f), overlay);
             ImGui.Spacing();
 
             float stopWidth = 160f;
@@ -414,17 +501,111 @@ public sealed class MainWindow : Window, IDisposable
             if (ImGui.Button("Stop Transfer", new Vector2(stopWidth, 0)))
                 _moveCts?.Cancel();
         }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        EnsureCategoryCache();
+        RecomputeRetainerCategoryCounts();
+
+        var style = ImGui.GetStyle();
+        float iconTextSpacing = 6f;
+
+        ImGui.PushFont(UiBuilder.IconFont);
+        string iconStr = (_showFilterPanel ? FontAwesomeIcon.AngleDown : FontAwesomeIcon.AngleRight).ToIconString();
+        var iconSize = ImGui.CalcTextSize(iconStr);
+        ImGui.PopFont();
+
+        string textStr = $"Filters ({_selectedCats.Count})";
+        var textSize = ImGui.CalcTextSize(textStr);
+
+
+        float btnW = style.FramePadding.X * 2f + iconSize.X + iconTextSpacing + textSize.X;
+        float btnH = MathF.Max(style.FramePadding.Y * 2f + MathF.Max(iconSize.Y, textSize.Y), ImGui.GetFrameHeight());
+
+        bool clicked = ImGui.Button("##filterBtn", new Vector2(-1, btnH));
+        if (clicked)
+            _showFilterPanel = !_showFilterPanel;
+
+        var pos = ImGui.GetItemRectMin();
+
+        float yCenter = pos.Y + (btnH - iconSize.Y) * 0.5f;
+        ImGui.PushFont(UiBuilder.IconFont);
+        ImGui.GetWindowDrawList().AddText(new Vector2(pos.X + style.FramePadding.X, yCenter), 
+            ImGui.GetColorU32(ImGuiCol.Text), iconStr);
+        ImGui.PopFont();
+
+        string dynamicText = $"Filters ({_selectedCats.Count})";
+
+        float textX = pos.X + style.FramePadding.X + iconSize.X + iconTextSpacing;
+        ImGui.GetWindowDrawList().AddText(new Vector2(textX, yCenter),
+            ImGui.GetColorU32(ImGuiCol.Text), dynamicText);
+
+        ImGui.Spacing();
+
+        if (_showFilterPanel)
+        {
+            ImGui.BeginChild("filterPanel", new Vector2(0, 220f), true);
+
+            ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(12f, 12f));
+            ImGui.SetNextItemWidth(-1);
+            ImGui.InputTextWithHint("##catSearch", "Search categories…", ref _catSearch, 32);
+            ImGui.PopStyleVar();
+
+            ImGui.Separator();
+            ImGui.Checkbox("Enable filter", ref _useCategoryFilter);
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Select all"))
+            {
+                _selectedCats.Clear();
+                foreach (var id in _catNames.Keys) _selectedCats.Add(id);
+                _useCategoryFilter = true;
+            }
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Clear"))
+            {
+                _selectedCats.Clear();
+                _useCategoryFilter = false;
+            }
+
+            ImGui.Separator();
+
+            IEnumerable<KeyValuePair<uint, string>> catEnum = _catNames;
+
+            if (!string.IsNullOrWhiteSpace(_catSearch))
+            {
+                var q = _catSearch.Trim();
+                catEnum = catEnum.Where(kv => kv.Value.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0);
+            }
+
+            foreach (var kv in catEnum.OrderBy(k => k.Value, StringComparer.OrdinalIgnoreCase))
+            {
+                bool on = _selectedCats.Contains(kv.Key);
+                int count = _retCatCounts.TryGetValue(kv.Key, out var c) ? c : 0;
+
+                string label = count > 0 ? $"{kv.Value} ({count})" : kv.Value;
+
+                if (ImGui.Checkbox(label + $"##cat{kv.Key}", ref on))
+                {
+                    if (on) _selectedCats.Add(kv.Key);
+                    else _selectedCats.Remove(kv.Key);
+
+                    _useCategoryFilter = _selectedCats.Count > 0;
+                }
+            }
+
+            ImGui.EndChild();
+            ImGui.Spacing();
         }
+    }
 
     public override void PostDraw()
     {
-        // Pop our WindowPadding style var
         ImGui.PopStyleVar();
     }
 
-    // =============================
-    // Small UI helpers
-    // =============================
     private static void CenteredText(string text)
     {
         float contentW = ImGui.GetContentRegionAvail().X;
