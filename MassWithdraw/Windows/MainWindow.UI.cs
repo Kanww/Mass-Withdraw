@@ -82,7 +82,7 @@ public partial class MainWindow : Window, IDisposable
         // ------------------------------------------------------------------------
 
         if (!running)
-            DrawIdleState(retainerOpen, willMove, eta, contentWidth);
+            DrawIdleState(retainerOpen, willMove, retStacks, bagFree, eta, contentWidth);
         else
             DrawRunningState(contentWidth);
     }
@@ -90,7 +90,7 @@ public partial class MainWindow : Window, IDisposable
     /// <summary>
     /// Renders the static idle UI: preview, transfer button, and filters.
     /// </summary>
-    private void DrawIdleState(bool retainerOpen, int willMove, TimeSpan eta, float contentWidth)
+    private void DrawIdleState(bool retainerOpen, int willMove, int retStacks, int bagFree, TimeSpan eta, float contentWidth)
     {
         // ------------------------------------------------------------------------
         // Preview summary
@@ -133,13 +133,30 @@ public partial class MainWindow : Window, IDisposable
             string msg;
 
             if (!retainerOpen)
+            {
                 msg = "Open your Retainer’s inventory window first.";
+            }
             else if (_isFilterEnabled && _selectedCategoryIds.Count == 0)
+            {
                 msg = "Select at least one category.";
-            else if (_isFilterEnabled && willMove == 0)
-                msg = "No items match the current filters.";
+            }
+            else if (retStacks == 0)
+            {
+                // Retainer has no eligible stacks at all
+                msg = _isFilterEnabled
+                    ? "No items match the current filters."
+                    : "Retainer inventory is empty.";
+            }
+            else if (bagFree == 0)
+            {
+                // Items exist but no bag space
+                msg = "Inventory full.";
+            }
             else
-                msg = "Retainer inventory is empty or your bags are full.";
+            {
+                // Fallback
+                msg = "Unable to transfer items. Check your filters or inventory.";
+            }
 
             CenteredText(msg, new Vector4(1f, 0.8f, 0.3f, 1f));
         }
