@@ -36,10 +36,6 @@ It lets you instantly withdraw all items from your current retainer straight int
 
 ## 🪄 License
 
-This project is licensed under the **MIT License**.
-
-You are free to use, modify, and distribute this plugin under the terms of that license.
-
 See the [LICENSE.md](LICENSE.md) file for full text.
 
 ---
