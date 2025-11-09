@@ -36,7 +36,7 @@ public partial class MainWindow : Window, IDisposable
 
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(0f, 0f),
+            MinimumSize = new Vector2(280f, 0f),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
     }
@@ -58,11 +58,19 @@ public partial class MainWindow : Window, IDisposable
         AnchorToRetainer();
 
         // ------------------------------------------------------------------------
-        // Cache transfer status and preview stats to avoid redundant field reads.
+        // Early guard: prevents the message flash on close.
         // ------------------------------------------------------------------------
         bool retainerOpen = IsInventoryRetainerOpen();
+        if (!retainerOpen)
+        {
+            IsOpen = false;
+            return;
+        }
+
+        // Cache transfer state once.
         bool running      = _transfer.Running;
 
+        // Preview data (only when idle; retainerOpen is guaranteed true here).
         int retStacks = 0, bagFree = 0, willMove = 0;
         TimeSpan eta = TimeSpan.Zero;
 

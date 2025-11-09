@@ -1,6 +1,7 @@
 ﻿using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
+using System;
 using System.IO;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
@@ -54,8 +55,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
 
         // Adds another button doing the same but for the main ui of the plugin
-        // PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
-        PluginInterface.UiBuilder.OpenMainUi += ToggleConfigUi;
+        PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
 
         //
         this.retainerWatcher = new RetainerWatcher(
@@ -92,9 +92,27 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        // In response to the slash command, toggle the display status of our main or config ui
-        // MainWindow.Toggle();
-        ConfigWindow.Toggle();
+        // Handle explicit subcommands. Root (/masswithdraw) does nothing.
+        var a = (args ?? string.Empty).Trim();
+
+        if (a.Length == 0)
+            return;
+
+        if (a.StartsWith("transfer", StringComparison.OrdinalIgnoreCase))
+        {
+            this.MainWindow.StartTransferFromCommand();
+            return;
+        }
+        if (a.StartsWith("config", StringComparison.OrdinalIgnoreCase))
+        {
+            this.ToggleConfigUi();
+            return;
+        }
+
+        // print help for unknown subcommands
+        Plugin.ChatGui.Print("[MassWithdraw] Unknown subcommand. Available options:");
+        Plugin.ChatGui.Print("[MassWithdraw] /masswithdraw transfer  → Trigger the mass withdraw transfer if possible");
+        Plugin.ChatGui.Print("[MassWithdraw] /masswithdraw config    → Open the configuration window");
     }
     
     public void ToggleConfigUi() => ConfigWindow.Toggle();

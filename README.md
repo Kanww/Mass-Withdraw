@@ -20,7 +20,8 @@ It lets you instantly withdraw all items from your current retainer straight int
 
 | Command | Description |
 |----------|-------------|
-| `/masswithdraw` | Opens the configuration window. |
+| `/masswithdraw config` | Open the config window. |
+| `/masswithdraw transfer` | Immediately starts a transfer if possible (prints a message if not). |
 
 ---
 

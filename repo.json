@@ -13,7 +13,7 @@
     "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/latest.zip",
     "LoadPriority": 0,
     "Punchline": "Fast and safe retainer inventory withdraw.",
-    "AssemblyVersion": "1.0.1.1",
+    "AssemblyVersion": "1.0.1.2",
     "Changelog": "Fix wrong disabled-state messages",
     "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png"
   }

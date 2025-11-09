@@ -411,4 +411,39 @@ public partial class MainWindow
         // ------------------------------------------------------------------------
         return false;
     }
+
+    /// <summary>
+    /// Slash-command entry: try to start a transfer immediately and echo a clear reason if not possible.
+    /// Does NOT open the UI; it uses the same preview logic as the window.
+    /// </summary>
+    public void StartTransferFromCommand()
+    {
+        // Retainer must be open
+        if (!IsInventoryRetainerOpen())
+        {
+            Plugin.ChatGui.PrintError("[MassWithdraw] Open your Retainer’s inventory window first.");
+            return;
+        }
+
+        var p = ComputeTransferPreview(DelayMsDefault);
+
+        if (p.willMove <= 0)
+        {
+            string reason;
+
+            if (p.bagFree == 0 && p.retStacks > 0)
+                reason = "Inventory full.";
+            else if (p.retStacks == 0)
+                reason = "No items eligible to transfer (check filters).";
+            else
+                reason = "Nothing to transfer.";
+
+            Plugin.ChatGui.PrintError($"[MassWithdraw] {reason}");
+            return;
+        }
+
+        StartMoveAllRetainerItems(DelayMsDefault);
+        Plugin.ChatGui.Print("[MassWithdraw] Transfer started…");
+    }
+
 }

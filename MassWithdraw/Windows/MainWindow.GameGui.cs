@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace MassWithdraw.Windows;
@@ -49,7 +50,9 @@ public partial class MainWindow
                     continue;
 
                 pos  = new Vector2(unit->X, unit->Y);
-                size = new Vector2(w, h);
+                float sx = unit->RootNode->ScaleX <= 0f ? 1f : unit->RootNode->ScaleX;
+                float sy = unit->RootNode->ScaleY <= 0f ? 1f : unit->RootNode->ScaleY;
+                size = new Vector2(w * sx, h * sy);
                 return true;
             }
         }
@@ -67,7 +70,8 @@ public partial class MainWindow
         if (!TryGetVisibleRetainerRect(out var pos, out var size))
             return;
 
-        var target = new Vector2(pos.X + size.X + AnchorGapX, pos.Y);
+        float gap = AnchorGapX * ImGui.GetIO().FontGlobalScale;
+        var target = new Vector2(pos.X + size.X + gap, pos.Y);
 
         const float SnapThreshold = 1f; // px
         bool haveLast = !float.IsNaN(_lastAnchor.X);
