@@ -2,7 +2,7 @@
   "Author": "Kanwa",
   "Name": "Mass Withdraw",
   "InternalName": "MassWithdraw",
-  "AssemblyVersion": "1.0.0.1",
+  "AssemblyVersion": "1.0.1.0",
   "Description": "Withdraw all items from your retainer into your inventory with preview, async pacing, and unique-item protection.",
   "ApplicableVersion": "any",
   "Tags": [

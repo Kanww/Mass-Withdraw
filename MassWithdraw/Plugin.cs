@@ -60,9 +60,9 @@ public sealed class Plugin : IDalamudPlugin
         //
         this.retainerWatcher = new RetainerWatcher(
             framework: Framework,
-            isRetainerOpen: MassWithdraw.Windows.MainWindow.IsInventoryRetainerOpenForWatcher,
+            isRetainerOpen: () => this.MainWindow.IsInventoryRetainerOpen(),
             setMainWindowOpen: open => this.MainWindow.IsOpen = open,
-            isEnabled: () => this.Configuration.AutoOpenOnRetainer   // NEW
+            isEnabled: () => this.Configuration.AutoOpenOnRetainer
         );
 
 
