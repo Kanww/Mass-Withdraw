@@ -1,29 +1,39 @@
-﻿﻿using System;
-using System.Collections.Generic;
+﻿﻿/*
+===============================================================================
+  MassWithdraw – MainWindow.UI.cs
+===============================================================================
+
+  Overview
+  ---------------------------------------------------------------------------
+  Defines the ImGui-based user interface for the MassWithdraw plugin.
+
+  This window handles:
+    • Visual layout and sizing
+    • User input and interaction
+    • Real-time feedback during item transfers
+
+  The logic for filtering, preview computation, and transfer execution
+  resides in MainWindow.Logic.cs.
+
+===============================================================================
+*/
+
+using System;
 using System.Numerics;
-using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Windowing;
 using FFXIVClientStructs.FFXIV.Component.GUI;
-using Lumina.Excel.Sheets;
 
 namespace MassWithdraw.Windows;
 
 public partial class MainWindow : Window, IDisposable
 {
-    // Layout tokens
-    private const float AnchorGapX = 8f;                // Gap between the Retainer addon and this window (X).
-    private const int DelayMsDefault = 400;             // Delay (ms) between item moves.
-    private const float FilterPanelHeight = 72f;        // Max height for the filters child; content auto-sizes up to this (then scrolls).
-    private const float FilterRowSpacing = 10f;         // Vertical spacing between filter rows (used for auto height calc).
-    private const float ButtonWidth = 150f;             // Standard button width.
-    private const float ButtonSpacing = 12f;            // Horizontal spacing between buttons.
-    private const float HeaderIconTextSpacing = 6f;     // Space between arrow icon and “Filters (N)” text.
+    // Layout & timing
+    private const float AnchorGapX = 8f, FilterPanelHeight = 200f, ButtonWidth = 150f, HeaderIconTextSpacing = 6f;
+    private const int   DelayMsDefault = 400;
 
-    /// <summary>
-    /// Configures a compact, auto-resizing window.
-    /// </summary>
+   // Defines initial window style flags and sizing constraints.
     public MainWindow()
         : base("Mass Withdraw",
             ImGuiWindowFlags.NoScrollbar |
@@ -33,363 +43,237 @@ public partial class MainWindow : Window, IDisposable
             ImGuiWindowFlags.AlwaysAutoResize)
     {
         RespectCloseHotkey = false;
-
-        SizeConstraints = new WindowSizeConstraints
+        SizeConstraints = new()
         {
-            MinimumSize = new Vector2(280f, 0f),
-            MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
+            MinimumSize = new(280f, 0f),
+            MaximumSize = new(float.MaxValue, float.MaxValue),
         };
     }
 
-    /// <summary>
-    /// No unmanaged resources.
-    /// </summary>
-    public void Dispose() { /* no-op */ }
+    //
+    public void Dispose() { }
 
-    /// <summary>
-    /// Main UI composition: preview, action buttons, filters, and progress bar.
-    /// </summary>
+    /*
+     * ---------------------------------------------------------------------------
+     *  Draw() – Main render entry point
+     * ---------------------------------------------------------------------------
+     *  Called every frame by Dalamud’s window system. Anchors the window to the
+     *  retainer inventory UI, determines current transfer state, and dispatches
+     *  to either the idle or running UI modes.
+     * ---------------------------------------------------------------------------
+    */
     public override void Draw()
     {
-
-        // ------------------------------------------------------------------------
-        // Snap the window next to the Retainer Inventory UI (if visible).
-        // ------------------------------------------------------------------------
         AnchorToRetainer();
+        if (!IsInventoryRetainerOpen()) { IsOpen = false; return; }
 
-        // ------------------------------------------------------------------------
-        // Early guard: prevents the message flash on close.
-        // ------------------------------------------------------------------------
-        bool retainerOpen = IsInventoryRetainerOpen();
-        if (!retainerOpen)
-        {
-            IsOpen = false;
-            return;
-        }
+        var running = _transfer.Running;
 
-        // Cache transfer state once.
-        bool running      = _transfer.Running;
-
-        // Preview data (only when idle; retainerOpen is guaranteed true here).
         int retStacks = 0, bagFree = 0, willMove = 0;
         TimeSpan eta = TimeSpan.Zero;
 
-        if (!running && retainerOpen)
-        {
-            var p = ComputeTransferPreview(DelayMsDefault);
-            retStacks = p.retStacks;
-            bagFree   = p.bagFree;
-            willMove  = p.willMove;
-            eta       = p.eta;
-        }
-
-        float contentWidth = ImGui.GetContentRegionAvail().X;
-
-        // ------------------------------------------------------------------------
-        // Content rendering
-        // ------------------------------------------------------------------------
-
         if (!running)
-            DrawIdleState(retainerOpen, willMove, retStacks, bagFree, eta, contentWidth);
-        else
-            DrawRunningState(contentWidth);
+            (retStacks, bagFree, willMove, eta) = ComputeTransferPreview(DelayMsDefault);
+
+        float w = ImGui.GetContentRegionAvail().X;
+        if (running) DrawRunningState(w);
+        else         DrawIdleState(willMove, retStacks, bagFree, eta, w);
     }
 
-    /// <summary>
-    /// Renders the static idle UI: preview, transfer button, and filters.
-    /// </summary>
-    private void DrawIdleState(bool retainerOpen, int willMove, int retStacks, int bagFree, TimeSpan eta, float contentWidth)
+    /*
+     * ---------------------------------------------------------------------------
+     *  DrawIdleState()
+     * ---------------------------------------------------------------------------
+     *  Displays the main “ready” interface when no transfer is in progress.
+     *  Includes transfer button, preview info, filter section, and feedback text.
+     * ---------------------------------------------------------------------------
+    */
+    private void DrawIdleState(int willMove, int retStacks, int bagFree, TimeSpan eta, float contentWidth)
     {
-        // ------------------------------------------------------------------------
-        // Preview summary
-        // ------------------------------------------------------------------------
         if (willMove > 0)
         {
-            string line = $"Will move {willMove} item{(willMove == 1 ? "" : "s")} (ETA ~ {Math.Max(0, (int)eta.TotalSeconds)}s)";
-            CenteredText(line, new Vector4(0.8f, 0.9f, 1f, 1f));
+            CenteredText($"Will move {willMove} item{(willMove == 1 ? "" : "s")} (ETA ~ {Math.Max(0, (int)eta.TotalSeconds)}s)",
+                new Vector4(0.8f, 0.9f, 1f, 1f));
             ImGui.Spacing();
         }
 
-        // ------------------------------------------------------------------------
-        // Transfer button
-        // ------------------------------------------------------------------------
-         float buttonX = MathF.Max(8f, (contentWidth - ButtonWidth) * 0.5f + 8f);
-         ImGui.SetCursorPosX(buttonX);
+        ImGui.SetCursorPosX(MathF.Max(8f, (contentWidth - ButtonWidth) * 0.5f + 8f));
 
-        bool disableTransfer =
-            !retainerOpen ||
-            willMove <= 0 ||
-            (_isFilterEnabled && _selectedCategoryIds.Count == 0);
+        bool canTransfer = willMove > 0 && (!_isFilterEnabled || _selectedCategoryIds.Count > 0);
 
-        if (disableTransfer)
-        {
-            ImGui.BeginDisabled();
-            ImGui.Button("Transfer", new Vector2(ButtonWidth, 0));
-            ImGui.EndDisabled();
-        }
-        else if (ImGui.Button("Transfer", new Vector2(ButtonWidth, 0)))
-        {
+        if (!canTransfer) ImGui.BeginDisabled();
+        if (ImGui.Button("Transfer", new Vector2(ButtonWidth, 0)))
             StartMoveAllRetainerItems(DelayMsDefault);
-        }
+        if (!canTransfer) ImGui.EndDisabled();
 
-        // ------------------------------------------------------------------------
-        // Disabled state message
-        // ------------------------------------------------------------------------
-        if (disableTransfer)
+        if (!canTransfer)
         {
             ImGui.Spacing();
-            string msg;
-
-            if (!retainerOpen)
-            {
-                msg = "Open your Retainer’s inventory window first.";
-            }
-            else if (_isFilterEnabled && _selectedCategoryIds.Count == 0)
-            {
-                msg = "Select at least one category.";
-            }
-            else if (retStacks == 0)
-            {
-                // Retainer has no eligible stacks at all
-                msg = _isFilterEnabled
-                    ? "No items match the current filters."
-                    : "Retainer inventory is empty.";
-            }
-            else if (bagFree == 0)
-            {
-                // Items exist but no bag space
-                msg = "Inventory full.";
-            }
-            else
-            {
-                // Fallback
-                msg = "Unable to transfer items. Check your filters or inventory.";
-            }
-
+            string msg =
+                (_isFilterEnabled && _selectedCategoryIds.Count == 0) ? "Select at least one category." :
+                (retStacks == 0) ? (_isFilterEnabled ? "No items match the current filters." : "Retainer inventory is empty.") :
+                (bagFree == 0) ? "Inventory full." :
+                "Unable to transfer items. Check your filters or inventory.";
             CenteredText(msg, new Vector4(1f, 0.8f, 0.3f, 1f));
         }
 
-        // ------------------------------------------------------------------------
-        // Filter panel
-        // ------------------------------------------------------------------------
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
 
-        if (DrawFilterHeaderButton(contentWidth))
-            _showFilterPanel = !_showFilterPanel;
-
-        if (_showFilterPanel)
-            DrawFiltersPanel();
+        if (DrawFilterHeaderButton(contentWidth)) _showFilterPanel = !_showFilterPanel;
+        if (_showFilterPanel) DrawFiltersPanel();
     }
 
-    /// <summary>
-    /// Renders the “in-progress” state UI: progress bar and Stop button.
-    /// </summary>
-    private void DrawRunningState(float contentWidth)
+    /*
+     * ---------------------------------------------------------------------------
+     *  DrawRunningState()
+     * ---------------------------------------------------------------------------
+     *  Displays progress bar and Stop button while a transfer is active.
+     * ---------------------------------------------------------------------------
+    */
+    private void DrawRunningState(float w)
     {
-        // ------------------------------------------------------------------------
-        // Progress bar
-        // ------------------------------------------------------------------------
-        DrawProgress(contentWidth);
-
-        // ------------------------------------------------------------------------
-        // Stop button
-        // ------------------------------------------------------------------------
-        float stopWidth = 160f;
-        ImGui.SetCursorPosX(MathF.Max(0f, (contentWidth - stopWidth) * 0.5f));
-
-        if (ImGui.Button("Stop Transfer", new Vector2(stopWidth, 0)))
-            _cts?.Cancel();
+        DrawProgress(w);
+        const float stopW = 160f;
+        ImGui.SetCursorPosX(MathF.Max(0f, (w - stopW) * 0.5f));
+        if (ImGui.Button("Stop Transfer", new Vector2(stopW, 0))) _cts?.Cancel();
     }
 
-    /// <summary>
-    /// Draws the filter section header — an expandable button with arrow icon and “Filters (N)” label.
-    /// </summary>
-    private bool DrawFilterHeaderButton(float availableWidth)
+    /*
+     * ---------------------------------------------------------------------------
+     *  DrawFilterHeaderButton()
+     * ---------------------------------------------------------------------------
+     *  Renders the header toggle for the filter section, including arrow icon and
+     *  current selection count.
+     * ---------------------------------------------------------------------------
+    */
+    private bool DrawFilterHeaderButton(float width)
     {
-        // ------------------------------------------------------------------------
-        // Style and layout references
-        // ------------------------------------------------------------------------
-        var style = ImGui.GetStyle();
-        float btnW = availableWidth;
+        var style    = ImGui.GetStyle();
+        string icon  = (_showFilterPanel ? FontAwesomeIcon.AngleDown : FontAwesomeIcon.AngleRight).ToIconString();
+        string label = $"  Filters ({_selectedCategoryIds.Count})";
 
-        // ------------------------------------------------------------------------
-        // Compute icon and label
-        // ------------------------------------------------------------------------
-        string iconStr = (_showFilterPanel ? FontAwesomeIcon.AngleDown : FontAwesomeIcon.AngleRight).ToIconString();
-        string labelStr = $"  Filters ({_selectedCategoryIds.Count})";
+        float h      = MathF.Max(ImGui.GetTextLineHeight() + style.FramePadding.Y * 2f, ImGui.GetFrameHeight());
+        bool clicked = ImGui.Button("##filterBtn", new Vector2(width, h));
 
-        // Compute total button height to fit either icon or text comfortably
-        float btnH = MathF.Max(
-            ImGui.GetTextLineHeight() + (style.FramePadding.Y * 2f),
-            ImGui.GetFrameHeight()
-        );
+        var dl   = ImGui.GetWindowDrawList();
+        var min  = ImGui.GetItemRectMin();
+        var max  = ImGui.GetItemRectMax();
+        float y  = min.Y + (max.Y - min.Y - ImGui.GetTextLineHeight()) * 0.5f;
+        uint col = ImGui.GetColorU32(ImGuiCol.Text);
 
-        // ------------------------------------------------------------------------
-        // Create the invisible clickable area
-        // ------------------------------------------------------------------------
-        bool clicked = ImGui.Button("##filterBtn", new Vector2(btnW, btnH));
-
-        // ------------------------------------------------------------------------
-        // Positioning for overlayed text and icon
-        // ------------------------------------------------------------------------
-        var drawList = ImGui.GetWindowDrawList();
-        var btnMin = ImGui.GetItemRectMin();
-        var btnMax = ImGui.GetItemRectMax();
-        float centerY = btnMin.Y + (btnMax.Y - btnMin.Y - ImGui.GetTextLineHeight()) * 0.5f;
-
-        // ------------------------------------------------------------------------
-        // Draw icon
-        // ------------------------------------------------------------------------
         ImGui.PushFont(UiBuilder.IconFont);
-        drawList.AddText(
-            new Vector2(btnMin.X + style.FramePadding.X, centerY),
-            ImGui.GetColorU32(ImGuiCol.Text),
-            iconStr
-        );
+        dl.AddText(new Vector2(min.X + style.FramePadding.X, y), col, icon);
         ImGui.PopFont();
 
-        // ------------------------------------------------------------------------
-        // Draw label (after icon)
-        // ------------------------------------------------------------------------
-        float textX = btnMin.X + style.FramePadding.X + ImGui.CalcTextSize(iconStr).X + HeaderIconTextSpacing;
-        drawList.AddText(
-            new Vector2(textX, centerY),
-            ImGui.GetColorU32(ImGuiCol.Text),
-            labelStr
-        );
-
-        // ------------------------------------------------------------------------
-        // Return click result
-        // ------------------------------------------------------------------------
+        dl.AddText(new Vector2(min.X + style.FramePadding.X + ImGui.CalcTextSize(icon).X + HeaderIconTextSpacing, y), col, label);
         return clicked;
     }
 
-    /// <summary>
-    /// Draws the filter panel contents.
-    /// </summary>
+    /*
+     * ---------------------------------------------------------------------------
+     *  DrawFiltersPanel()
+     * ---------------------------------------------------------------------------
+     *  Renders the filter selection panel with checkboxes for each category.
+     * ---------------------------------------------------------------------------
+    */
     private void DrawFiltersPanel()
     {
-        // ------------------------------------------------------------------------
-        // Data preparation
-        // ------------------------------------------------------------------------
         RecomputeRetainerCategoryCounts();
 
-        // ------------------------------------------------------------------------
-        // Panel sizing (scaled for DPI)
-        // ------------------------------------------------------------------------
-        float scaledHeight = FilterPanelHeight * ImGui.GetIO().FontGlobalScale;
-        ImGui.BeginChild("filterPanel", new Vector2(0, scaledHeight), true, ImGuiWindowFlags.AlwaysUseWindowPadding);
+        ImGui.BeginChild(
+            "filterPanel",
+            new Vector2(0, FilterPanelHeight * ImGui.GetIO().FontGlobalScale),
+            true,
+            ImGuiWindowFlags.AlwaysUseWindowPadding
+        );
 
-        // ------------------------------------------------------------------------
-        // Header actions
-        // ------------------------------------------------------------------------
-        if (ImGui.Button("Clear") && _selectedCategoryIds.Count > 0)
-            _selectedCategoryIds.Clear();
+        bool hasSel = _selectedCategoryIds.Count > 0;
+        if (!hasSel) ImGui.BeginDisabled();
+        if (ImGui.Button("Clear")) _selectedCategoryIds.Clear();
+        if (!hasSel) ImGui.EndDisabled();
 
         ImGui.Spacing();
 
-        // ========================================================================
-        // BEGIN: Non-white Gear Filter
-        // ------------------------------------------------------------------------
-        bool isEnabled = _selectedCategoryIds.Contains(CatNonWhiteGear);
-        int  count     = _retainerCountsByCategory.TryGetValue(CatNonWhiteGear, out var c) ? c : 0;
-
-        string labelBase = "Non-white gear";
-        string label     = count > 0 ? $"{labelBase} ({count})" : labelBase;
-
-        bool shouldDim = count == 0 && !isEnabled;
-        if (shouldDim)
-            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.72f, 0.72f, 0.72f, 1f));
-
-        if (ImGui.Checkbox($"{label}##cat{CatNonWhiteGear}", ref isEnabled))
+        var cats = new (uint id, string label)[]
         {
-            if (isEnabled)
-                _selectedCategoryIds.Add(CatNonWhiteGear);
-            else
-                _selectedCategoryIds.Remove(CatNonWhiteGear);
-        }
+            (CatAllGear,      "All gear"),
+            (CatNonWhiteGear, "Non-white gear"),
+            (CatMateria,      "Materia"),
+            (CatConsumables,  "Consumables"),
+            (CatCraftingMats, "Crafting mats"),
+        };
 
-        if (shouldDim)
-            ImGui.PopStyleColor();
-        // ========================================================================
-        // END: Non-white Gear Filter
-        // ========================================================================
+        foreach (var (id, label) in cats)
+            DrawOneFilterCheckbox(id, label);
 
-        _isFilterEnabled = _selectedCategoryIds.Count > 0;   // State synchronization
+        _isFilterEnabled = hasSel;
 
         ImGui.EndChild();
         ImGui.Spacing();
     }
 
-    /// <summary>
-    /// Draws the transfer progress bar with percentage and ETA.
-    /// </summary>
-    private void DrawProgress(float contentWidth)
+    /*
+     * ---------------------------------------------------------------------------
+     *  DrawProgress()
+     * ---------------------------------------------------------------------------
+     *  Renders the animated progress bar during a running transfer, including
+     *  percentage and ETA text overlay.
+     * ---------------------------------------------------------------------------
+    */
+    private void DrawProgress(float w)
     {
-        // ------------------------------------------------------------------------
-        // Data snapshot (avoid redundant field reads during UI drawing)
-        // ------------------------------------------------------------------------
-        int moved = _transfer.Moved;
-        int total = _transfer.Total;
+        int moved = _transfer.Moved, total = _transfer.Total;
+        float frac = total > 0 ? Math.Clamp((float)moved / total, 0f, 1f) : 0f;
 
-        // ------------------------------------------------------------------------
-        // Compute current completion ratio and clamp it safely to valid bounds
-        // ------------------------------------------------------------------------
-        float frac = (total > 0) ? (float)moved / total : 0f;
-        frac = Math.Clamp(frac, 0f, 1f);
+        string overlay = total > 0
+            ? $"{moved}/{total}  ({(int)(frac * 100 + 0.5f)}%)" +
+            ((total - moved) > 0
+                ? $"  •  ~{Math.Max(0, (int)(TimeSpan.FromMilliseconds((long)(total - moved) * DelayMsDefault).TotalSeconds))}s"
+                : "")
+            : $"{moved} moved";
 
-        // ------------------------------------------------------------------------
-        // Displays context information above the bar
-        // ------------------------------------------------------------------------
-        string overlay;
-        if (total > 0)
-        {
-            int pct = (int)(frac * 100f + 0.5f);
-            int remaining = Math.Max(0, total - moved);
-
-            // Estimate ETA using configured pacing (DelayMsDefault)
-            var eta = TimeSpan.FromMilliseconds((long)remaining * DelayMsDefault);
-            int etaSec = Math.Max(0, (int)eta.TotalSeconds);
-
-            overlay = etaSec > 0
-                ? $"{moved}/{total}  ({pct}%)  •  ~{etaSec}s"
-                : $"{moved}/{total}  ({pct}%)";
-        } else { overlay = $"{moved} moved"; }
-
-        ImGui.ProgressBar(frac, new Vector2(contentWidth, 22f), overlay);   // Draw bar (fixed height: 22f).
+        ImGui.ProgressBar(frac, new Vector2(w, 22f), overlay);
         ImGui.Spacing();
     }
 
-    // ============================================================================
-    // UI HELPERS
-    // ============================================================================
-
-    /// <summary>
-    /// Draws text horizontally centered in the current window.
-    /// Optionally applies a custom color.
-    /// </summary>
-    private static void CenteredText(string text, Vector4? color = null)
+    /*
+     * ---------------------------------------------------------------------------
+     *  DrawOneFilterCheckbox()
+     * ---------------------------------------------------------------------------
+     *  Renders a single filter checkbox with dynamic count and dimming.
+     * ---------------------------------------------------------------------------
+    */
+    private void DrawOneFilterCheckbox(uint id, string name)
     {
-        // ------------------------------------------------------------------------
-        // Layout computation
-        // ------------------------------------------------------------------------
-        // Compute available width (respects internal padding)
-        float regionWidth = ImGui.GetContentRegionAvail().X;
-        float textWidth   = ImGui.CalcTextSize(text).X;
+        bool enabled = _selectedCategoryIds.Contains(id);
+        int count = _retainerCountsByCategory.TryGetValue(id, out var c) ? c : 0;
+        string label = count > 0 ? $"{name} ({count})" : name;
 
-        // Center text horizontally with a minimal safety margin
-        float xOffset = MathF.Max(8f, (regionWidth - textWidth) * 0.5f);
-        ImGui.SetCursorPosX(xOffset);
+        bool dim = count == 0 && !enabled;
+        if (dim) ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.72f, 0.72f, 0.72f, 1f));
 
-        // ------------------------------------------------------------------------
-        // Render text (colored or default)
-        // ------------------------------------------------------------------------
-        if (color.HasValue)
-            ImGui.TextColored(color.Value, text);
-        else
-            ImGui.TextUnformatted(text);
+        if (ImGui.Checkbox($"{label}##cat{id}", ref enabled))
+            if (enabled) _selectedCategoryIds.Add(id);
+            else _selectedCategoryIds.Remove(id);
+
+        if (dim) ImGui.PopStyleColor();
     }
 
+    /*
+     * ---------------------------------------------------------------------------
+     *  CenteredText()
+     * ---------------------------------------------------------------------------
+     *  Utility helper that draws horizontally centered text within the current
+     *  ImGui content region, optionally with a custom color.
+     * ---------------------------------------------------------------------------
+    */
+    private static void CenteredText(string text, Vector4? color = null)
+    {
+        float x = MathF.Max(8f, (ImGui.GetContentRegionAvail().X - ImGui.CalcTextSize(text).X) * 0.5f);
+        ImGui.SetCursorPosX(x);
+        if (color is { } c) ImGui.TextColored(c, text);
+        else ImGui.TextUnformatted(text);
+    }
 }

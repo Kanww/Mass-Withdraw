@@ -1,5 +1,6 @@
 ## 🧾 Changelog
 
+- **1.0.1.3** — Added additional item categories for filtering (All Gear, Materia, Consumables, Crafting Mats)
 - **1.0.1.2** — Fixed several UI and command improvements:  
   • Removed flicker when closing the retainer inventory.  
   • Fixed anchor position when resizing the retainer bag.  

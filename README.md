@@ -10,7 +10,7 @@ It lets you instantly withdraw all items from your current retainer straight int
 - **Smart Preview** — shows how many items will move, how much bag space you have, and an ETA.
 - **Automatic Transfers** — safely moves all eligible items in sequence.
 - **Unique-Item Protection** — skips items you already own.
-- **Filter System** — choose which item types to withdraw (e.g. Non-white gear).
+- **Filter System** — choose which item types to withdraw.
 - **Auto-Anchor Window** — the plugin window stays neatly aligned next to the Retainer Inventory.
 - **Fast & Lightweight** — no lag, no setup, just open and withdraw.
 

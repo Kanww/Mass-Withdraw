@@ -1,449 +1,409 @@
+/*
+===============================================================================
+  MassWithdraw – MainWindow.Logic.cs
+===============================================================================
+
+  Overview
+  ---------------------------------------------------------------------------
+  Core logic for the MassWithdraw window:
+    • Filtering and category bookkeeping
+    • Transfer preview (counts + ETA)
+    • Asynchronous transfer execution with pacing and cancellation
+    • Utility lookups (unique items, rarity checks, player inventory scan)
+    • Category detection via ItemSearchCategory and simple heuristics
+
+===============================================================================
+*/
+
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Lumina.Excel.Sheets;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using ItemRow = Lumina.Excel.Sheets.Item;
 
 namespace MassWithdraw.Windows;
 
 public partial class MainWindow
 {
+    // Cached reference to the Item Excel sheet (lazy-loaded on first access)
+    private static Lumina.Excel.ExcelSheet<ItemRow>? _itemSheet;
+
+    // Helper to fetch an item row by its ID, initializing the sheet if needed
+    private static ItemRow? GetItemRow(uint itemId) =>
+        (_itemSheet ??= Plugin.DataManager.GetExcelSheet<ItemRow>())?.GetRow(itemId);
+
+    // UI state flags
     private bool _showFilterPanel = false;
     private bool _isFilterEnabled = false;
+    
+    // User filter selections and computed category counts
     private readonly HashSet<uint> _selectedCategoryIds = new();
-    private readonly Dictionary<uint, string> _catNames = new();
     private readonly Dictionary<uint, int> _retainerCountsByCategory = new();
-    private const uint CatNonWhiteGear = 999001;
+
+    // Custom logical category identifiers (plugin-specific, not FFXIV constants)
+    private const uint
+        CatNonWhiteGear  = 999001,
+        CatAllGear       = 999002,
+        CatMateria       = 999003,
+        CatConsumables   = 999004,
+        CatCraftingMats  = 999005;
+    
+    // Maps category IDs to their classification predicates
+    private readonly Dictionary<uint, Func<ItemRow, bool>> _categoryPredicatesRow = new()
+    {
+        [CatNonWhiteGear] = IsNonWhiteGearRow,
+        [CatAllGear]      = IsAllGearRow,
+        [CatMateria]      = IsMateriaRow,
+        [CatConsumables]  = IsConsumableRow,
+        [CatCraftingMats] = IsCraftMatRow,
+    };
+
+    // Search category sets
+    private static readonly HashSet<uint> SearchCats_Materia   = [57];
+    private static readonly HashSet<uint> SearchCats_Materials = [44, 47, 48, 49, 50, 51, 52, 53, 54, 55, 58, 59];
+    
+    // Transfer state
     private sealed class TransferState
     {
         public volatile bool Running;
-        public int Moved;
-        public int Total;
+        public int Moved, Total;
     }
     private TransferState _transfer = new();
     private CancellationTokenSource? _cts;
 
-    /// <summary>
-    /// Determines whether the specified <paramref name="itemId"/> refers to an item
-    /// flagged as “Unique” in the Item sheet (cannot be held in duplicate).
-    /// </summary>
-    private static bool IsUnique(uint itemId)
-    {
-        // ------------------------------------------------------------------------
-        // Retrieve the item row safely from Lumina’s Item sheet
-        // ------------------------------------------------------------------------
-        var sheet = Plugin.DataManager.GetExcelSheet<Item>();
-        var row   = sheet?.GetRow(itemId);
+    /*
+    * ---------------------------------------------------------------------------
+    *  Category predicate functions
+    * ---------------------------------------------------------------------------
+    *  These helpers classify an ItemRow into its broad logical category.
+    *  Used for filtering and previews.
+    * ---------------------------------------------------------------------------
+    */
+    private static bool IsNonWhiteGearRow(ItemRow row) =>
+        row.EquipSlotCategory.RowId > 0 && row.Rarity > 1;
 
-        // ------------------------------------------------------------------------
-        // Return the Unique flag (defaults to false when missing)
-        // ------------------------------------------------------------------------
-        return row?.IsUnique ?? false;
-    }
+    private static bool IsAllGearRow(ItemRow row) =>
+        row.EquipSlotCategory.RowId > 0;
 
-    /// <summary>
-    /// Determines whether the given <paramref name="itemId"/> corresponds to an equippable
-    /// gear piece of rarity higher than “white” (rarity > 1).
-    /// </summary>
-    private static bool IsNonWhiteGear(uint itemId)
-    {
-        // ------------------------------------------------------------------------
-        // Retrieve the Item sheet (read-only data from Lumina)
-        // ------------------------------------------------------------------------
-        var sheet = Plugin.DataManager.GetExcelSheet<Item>();
-        if (sheet == null)
-            return false;
+    private static bool IsMateriaRow(ItemRow row) =>
+        SearchCats_Materia.Contains(row.ItemSearchCategory.RowId);
 
-        // GetRow is non-nullable in your Lumina; use a cheap guard instead of null checks
-        var row = sheet.GetRow(itemId);
+    private static bool IsConsumableRow(ItemRow row) =>
+        row.EquipSlotCategory.RowId == 0 && row.ItemAction.RowId > 0;
 
-        // A valid gear item has an EquipSlotCategory > 0
-        // “Non-white” means rarity strictly greater than 1
-        return row.EquipSlotCategory.RowId > 0 && row.Rarity > 1;
-    }
+    private static bool IsCraftMatRow(ItemRow row) =>
+        SearchCats_Materials.Contains(row.ItemSearchCategory.RowId) && row.ItemAction.RowId == 0;
+    
 
-    /// <summary>
-    /// Rebuilds the per-retainer counts used by the filter panel.
-    /// Currently tracks only the “Non-white gear” synthetic category.
-    /// </summary>
+    /*
+     * ---------------------------------------------------------------------------
+     *  RecomputeRetainerCategoryCounts()
+     * ---------------------------------------------------------------------------
+     *  Scans the retainer inventory and updates the _retainerCountsByCategory
+     *  dictionary with the current counts of items per category.
+     * ---------------------------------------------------------------------------
+    */
     private unsafe void RecomputeRetainerCategoryCounts()
     {
-        // ------------------------------------------------------------------------
-        // Reset and early exit if inventory is unavailable
-        // ------------------------------------------------------------------------
         _retainerCountsByCategory.Clear();
 
         var inv = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
-        if (inv == null)
-            return;
+        if (inv == null) return;
 
-        // ------------------------------------------------------------------------
-        // Scan all retainer pages once; accumulate locally for minimal dict churn
-        // ------------------------------------------------------------------------
-        const int RetainerFirst = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage1;
-        const int RetainerLast  = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage7;
-
-        int nonWhiteCount = 0;
-
-        for (int t = RetainerFirst; t <= RetainerLast; t++)
+        for (int t = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage1;
+                t <= (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage7; t++)
         {
             var cont = inv->GetInventoryContainer((FFXIVClientStructs.FFXIV.Client.Game.InventoryType)t);
-            if (cont == null)
-                continue;
+            if (cont == null) continue;
 
             for (int s = 0; s < cont->Size; s++)
             {
                 var slot = cont->GetInventorySlot(s);
-                if (slot == null || slot->ItemId == 0 || slot->Quantity == 0)
-                    continue;
+                if (slot == null || slot->ItemId == 0 || slot->Quantity == 0) continue;
 
-                if (IsNonWhiteGear(slot->ItemId))
-                    nonWhiteCount++;
+                var row = GetItemRow(slot->ItemId);
+                if (row == null) continue;
+
+                foreach (var (catId, pred) in _categoryPredicatesRow)
+                {
+                    if (!pred(row.Value)) continue;
+                    _retainerCountsByCategory.TryGetValue(catId, out var c);
+                    _retainerCountsByCategory[catId] = c + 1;
+                }
             }
         }
-
-        // ------------------------------------------------------------------------
-        // Publish result only if there’s something to show
-        // ------------------------------------------------------------------------
-        if (nonWhiteCount > 0)
-            _retainerCountsByCategory[CatNonWhiteGear] = nonWhiteCount;
     }
+    
+    /*
+     * ---------------------------------------------------------------------------
+     *  ShouldTransfer()
+     * ---------------------------------------------------------------------------
+     *  Determines if the given ItemRow should be transferred based
+     *  on the current filter settings.
+     * ---------------------------------------------------------------------------
+    */
+    private bool ShouldTransfer(ItemRow row) =>
+        !_isFilterEnabled ||
+        (_selectedCategoryIds.Count > 0 &&
+        _selectedCategoryIds.Any(id => _categoryPredicatesRow.TryGetValue(id, out var pred) && pred(row)));
 
-    /// <summary>
-    /// Determines whether an item should be transferred based on active filters.
-    /// </summary>
-    private bool ShouldTransfer(uint itemId)
-    => !_isFilterEnabled
-       || (_selectedCategoryIds.Contains(CatNonWhiteGear) && IsNonWhiteGear(itemId));
-
-    /// <summary>
-    /// Quick preview of a pending transfer:
-    /// - retStacks : eligible non-empty stacks in the open retainer (honors filters + unique-skip)
-    /// - bagFree   : free slots across Inventory1–Inventory4
-    /// - willMove  : min(retStacks, bagFree)
-    /// - eta       : rough time at <paramref name="delayMs"/> per moved stack
-    /// </summary>
+    /*
+     * ---------------------------------------------------------------------------
+     *  ComputeTransferPreview()
+     * ---------------------------------------------------------------------------
+     *  Scans the retainer and player inventories to compute how many item stacks
+     *  would be transferred, how much free space is available, and the estimated
+     *  time to complete the transfer with the given delay.
+     * ---------------------------------------------------------------------------
+    */
     private unsafe (int retStacks, int bagFree, int willMove, TimeSpan eta) ComputeTransferPreview(int delayMs)
     {
-        // ------------------------------------------------------------------------
-        // Data source
-        // ------------------------------------------------------------------------
         var inv = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
-        if (inv == null)
-            return (0, 0, 0, TimeSpan.Zero);
+        if (inv == null) return (0, 0, 0, TimeSpan.Zero);
 
-        // ------------------------------------------------------------------------
-        // Index ranges (explicit to avoid magic numbers)
-        // ------------------------------------------------------------------------
-        const int RetainerFirst = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage1; // <-- if you saw a typo earlier, fix to FFXIV
-        const int RetainerLast  = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage7;
+        int retStacks = 0, bagFree = 0;
 
-        const int BagFirst      = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.Inventory1;
-        const int BagPages      = 4;
-
-        int retStacks = 0;
-        int bagFree   = 0;
-
-        // ------------------------------------------------------------------------
-        // Count eligible retainer stacks
-        // - non-empty slots
-        // - pass current category filter via ShouldTransfer
-        // - skip Unique if player already holds one (to match real move logic)
-        // ------------------------------------------------------------------------
-        for (int t = RetainerFirst; t <= RetainerLast; t++)
+        // Count eligible stacks in retainer pages
+        for (int t = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage1;
+                t <= (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage7; t++)
         {
-            var srcType = (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)t;
-            var cont    = inv->GetInventoryContainer(srcType);
+            var cont = inv->GetInventoryContainer((FFXIVClientStructs.FFXIV.Client.Game.InventoryType)t);
             if (cont == null) continue;
 
             for (int s = 0; s < cont->Size; s++)
             {
                 var it = cont->GetInventorySlot(s);
-                if (it == null || it->ItemId == 0 || it->Quantity == 0)
-                    continue;
-
-                if (!ShouldTransfer(it->ItemId))
-                    continue;
-
-                if (IsUnique(it->ItemId) && PlayerHasItem(it->ItemId))
-                    continue;
-
+                var row = (it == null || it->ItemId == 0 || it->Quantity == 0) ? null : GetItemRow(it->ItemId);
+                if (row == null || !ShouldTransfer(row.Value) || (row.Value.IsUnique && PlayerHasItem(it->ItemId))) continue;
                 retStacks++;
             }
         }
 
-        // ------------------------------------------------------------------------
-        // Count free bag slots (Inventory1–4)
-        // A slot counts as free when null OR ItemId == 0.
-        // ------------------------------------------------------------------------
-        for (int i = 0; i < BagPages; i++)
+        // Count free bag slots
+        for (int i = 0; i < 4; i++)
         {
-            var bagType = (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)(BagFirst + i);
-            var cont    = inv->GetInventoryContainer(bagType);
+            var cont = inv->GetInventoryContainer(
+                (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)((int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.Inventory1 + i));
             if (cont == null) continue;
 
             for (int s = 0; s < cont->Size; s++)
             {
                 var slot = cont->GetInventorySlot(s);
-                if (slot == null || slot->ItemId == 0)
-                    bagFree++;
+                if (slot == null || slot->ItemId == 0) bagFree++;
             }
         }
 
-        // ------------------------------------------------------------------------
-        // Result synthesis
-        // ------------------------------------------------------------------------
         int willMove = Math.Min(retStacks, bagFree);
-
-        // Protect against negative/overflow and respect 0 delay gracefully
-        int safeDelay = Math.Max(0, delayMs);
-        var eta       = TimeSpan.FromMilliseconds((long)willMove * safeDelay);
-
+        var eta = TimeSpan.FromMilliseconds((long)Math.Max(0, delayMs) * willMove);
         return (retStacks, bagFree, willMove, eta);
     }
 
-    /// <summary>
-    /// Starts an asynchronous transfer of all eligible items from the currently open
-    /// retainer inventory into the player's bags. Honors filters, skips Unique items
-    /// already owned, and paces via <paramref name="delayMs"/> per move.
-    /// </summary>
+    /*
+     * ---------------------------------------------------------------------------
+     *  StartMoveAllRetainerItems()
+     * ---------------------------------------------------------------------------
+     *  Initiates the asynchronous transfer of all eligible items from the
+     *  retainer to the player inventory with the specified delay.
+     * ---------------------------------------------------------------------------
+    */
     private void StartMoveAllRetainerItems(int delayMs)
     {
-        // ------------------------------------------------------------------------
-        // Concurrency guard + initial snapshot
-        // ------------------------------------------------------------------------
-        if (_transfer.Running)
-            return;
+        if (_transfer.Running) return;
 
-        var preview = ComputeTransferPreview(delayMs);
-        if (preview.willMove <= 0)
-        {
-            Plugin.ChatGui.Print("[MassWithdraw] Nothing to transfer.");
-            return;
-        }
+        var p = ComputeTransferPreview(delayMs);
+        if (p.willMove <= 0) { Plugin.ChatGui.Print("[MassWithdraw] Nothing to transfer."); return; }
 
-        _transfer = new TransferState
-        {
-            Running = true,
-            Moved   = 0,
-            Total   = preview.willMove
-        };
+        _transfer = new TransferState { Running = true, Moved = 0, Total = p.willMove };
 
         _cts = new CancellationTokenSource();
-        var token = _cts.Token;
+        _ = RunTransferAsync(delayMs, _cts.Token);
+    }
 
-        // ------------------------------------------------------------------------
-        // Background worker
-        // ------------------------------------------------------------------------
-        _ = Task.Run(() =>
+    /*
+     * ---------------------------------------------------------------------------
+     *  RunTransferAsync()
+     * ---------------------------------------------------------------------------
+     *  Core async loop that performs the item transfers with delays.
+     * ---------------------------------------------------------------------------
+    */
+    private async Task RunTransferAsync(int delayMs, CancellationToken token)
+    {
+        try
         {
+            // Avoid repeated bag scans for the same Unique itemId during this run
+            var seenUnique = new HashSet<uint>();
+
+            // Ensure InventoryManager exists
             unsafe
             {
-                try
+                if (FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance() == null)
                 {
-                    var inv = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
-                    if (inv == null)
+                    Plugin.ChatGui.Print("[MassWithdraw] InventoryManager not available.");
+                    return;
+                }
+            }
+
+            for (int t = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage1;
+                    t <= (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage7; t++)
+            {
+                token.ThrowIfCancellationRequested();
+
+                for (int slot = 0; ; slot++)
+                {
+                    token.ThrowIfCancellationRequested();
+
+                    // Read current slot -> itemId (unsafe, no await)
+                    uint itemId;
+                    unsafe
                     {
-                        Plugin.ChatGui.Print("[MassWithdraw] InventoryManager not available.");
+                        var inv  = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
+                        var type = (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)t;
+                        var cont = inv->GetInventoryContainer(type);
+                        if (cont == null) break;
+                        if (slot >= cont->Size) break;
+
+                        var it = cont->GetInventorySlot(slot);
+                        if (it == null || it->ItemId == 0 || it->Quantity == 0) continue;
+                        itemId = it->ItemId;
+                    }
+
+                    // Row checks (safe)
+                    var row = GetItemRow(itemId);
+                    if (row == null || !ShouldTransfer(row.Value))
+                        continue;
+
+                    if (row.Value.IsUnique && (!seenUnique.Add(itemId) || PlayerHasItem(itemId)))
+                        continue;
+
+                    // Find a free bag slot (unsafe helper, no await)
+                    if (!FindFreeBagSlot(out var dstType, out var dstSlot))
+                    {
+                        Plugin.ChatGui.Print($"[MassWithdraw] Stopped: no free bag space. Moved {_transfer.Moved} item(s).");
                         return;
                     }
 
-                    // ------------------------------------------------------------
-                    // Retainer containers range
-                    // ------------------------------------------------------------
-                    const int RetainerFirst = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage1;
-                    const int RetainerLast  = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.RetainerPage7;
-
-                    // ------------------------------------------------------------
-                    // Local helper: find first free player bag slot (Inventory1..4)
-                    // ------------------------------------------------------------
-                    bool TryFindFreeBagSlot(out FFXIVClientStructs.FFXIV.Client.Game.InventoryType dstType, out int dstSlot)
+                    // Perform the move (unsafe, no await)
+                    unsafe
                     {
-                        const int FirstBag = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.Inventory1;
-                        const int BagPages = 4;
-
-                        for (int i = 0; i < BagPages; i++)
-                        {
-                            var type = (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)(FirstBag + i);
-                            var cont = inv->GetInventoryContainer(type);
-                            if (cont == null) continue;
-
-                            for (int s = 0; s < cont->Size; s++)
-                            {
-                                var slot = cont->GetInventorySlot(s);
-                                if (slot == null || slot->ItemId == 0)
-                                {
-                                    dstType = type;
-                                    dstSlot = s;
-                                    return true;
-                                }
-                            }
-                        }
-
-                        dstType = default;
-                        dstSlot = -1;
-                        return false;
+                        var inv  = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
+                        var type = (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)t;
+                        _ = inv->MoveItemSlot(type, (ushort)slot, dstType, (ushort)dstSlot, true);
                     }
 
-                    // ------------------------------------------------------------
-                    // Main transfer loop
-                    // ------------------------------------------------------------
-                    for (int t = RetainerFirst; t <= RetainerLast; t++)
-                    {
-                        token.ThrowIfCancellationRequested();
-
-                        var srcType = (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)t;
-                        var cont    = inv->GetInventoryContainer(srcType);
-                        if (cont == null)
-                            continue;
-
-                        for (int slot = 0; slot < cont->Size; slot++)
-                        {
-                            token.ThrowIfCancellationRequested();
-
-                            var item = cont->GetInventorySlot(slot);
-                            if (item == null || item->ItemId == 0 || item->Quantity == 0)
-                                continue;
-
-                            // Respect user filter
-                            if (!ShouldTransfer(item->ItemId))
-                                continue;
-
-                            // Unique safeguard: skip if already owned in player bags
-                            if (IsUnique(item->ItemId) && PlayerHasItem(item->ItemId))
-                                continue;
-
-                            // Destination search
-                            if (!TryFindFreeBagSlot(out var dstType, out var dstSlot))
-                            {
-                                Plugin.ChatGui.Print($"[MassWithdraw] Stopped: no free bag space. Moved {_transfer.Moved} item(s).");
-                                return;
-                            }
-
-                            // Move full stack (ignore return; pace via delay)
-                            _ = inv->MoveItemSlot(
-                                srcType,
-                                (ushort)slot,
-                                dstType,
-                                (ushort)dstSlot,
-                                true
-                            );
-
-                            _transfer.Moved++;
-
-                            // Pace the queue (async-friendly)
-                            Task.Delay(delayMs, token).Wait(token);
-                        }
-                    }
-
-                    Plugin.ChatGui.Print($"[MassWithdraw] Done. Moved total: {_transfer.Moved} item(s).");
-                }
-                catch (OperationCanceledException)
-                {
-                    Plugin.ChatGui.Print($"[MassWithdraw] Cancelled. Moved so far: {_transfer.Moved} item(s).");
-                }
-                catch (Exception ex)
-                {
-                    Plugin.ChatGui.Print($"[MassWithdraw] Error in async move: {ex.Message}");
-                }
-                finally
-                {
-                    // Reset state
-                    _transfer.Running = false;
-                    _cts?.Dispose();
-                    _cts = null;
+                    _transfer.Moved++;
+                    if (delayMs > 0) await Task.Delay(delayMs, token);
                 }
             }
-        });
+
+            Plugin.ChatGui.Print($"[MassWithdraw] Done. Moved total: {_transfer.Moved} item(s).");
+        }
+        catch (OperationCanceledException)
+        {
+            Plugin.ChatGui.Print($"[MassWithdraw] Cancelled. Moved so far: {_transfer.Moved} item(s).");
+        }
+        catch (Exception ex)
+        {
+            Plugin.ChatGui.Print($"[MassWithdraw] Error in async move: {ex.Message}");
+        }
+        finally
+        {
+            _transfer.Running = false;
+            _cts?.Dispose();
+            _cts = null;
+        }
+
+        // Local helper: finds one free inventory slot (unsafe inside, no await)
+        static bool FindFreeBagSlot(out FFXIVClientStructs.FFXIV.Client.Game.InventoryType dstType, out int dstSlot)
+        {
+            unsafe
+            {
+                var inv2 = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
+                if (inv2 == null) { dstType = default; dstSlot = -1; return false; }
+
+                for (int i = 0; i < 4; i++)
+                {
+                    var type = (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)
+                            ((int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.Inventory1 + i);
+                    var cont = inv2->GetInventoryContainer(type);
+                    if (cont == null) continue;
+
+                    for (int bagSlot = 0; bagSlot < cont->Size; bagSlot++)
+                    {
+                        var free = cont->GetInventorySlot(bagSlot);
+                        if (free == null || free->ItemId == 0)
+                        {
+                            dstType = type;
+                            dstSlot = bagSlot;
+                            return true;
+                        }
+                    }
+                }
+
+                dstType = default;
+                dstSlot = -1;
+                return false;
+            }
+        }
     }
 
-    /// <summary>
-    /// Returns true if the player currently has at least one item with the given
-    /// <paramref name="itemId"/> in their main inventory (Inventory1–Inventory4).
-    /// </summary>
+    /*
+     * ---------------------------------------------------------------------------
+     *  PlayerHasItem()
+     * ---------------------------------------------------------------------------
+     *  Returns true if the player already has at least one of the given item
+     *  across Inventory1–4. Used to prevent duplicate “Unique” items.
+     * ---------------------------------------------------------------------------
+    */
     private static unsafe bool PlayerHasItem(uint itemId)
     {
-        // ------------------------------------------------------------------------
-        // Early validation
-        // ------------------------------------------------------------------------
-        if (itemId == 0)
-            return false;
+        if (itemId == 0) return false;
 
         var inv = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();
-        if (inv == null)
-            return false;
+        if (inv == null) return false;
 
-
-        // ------------------------------------------------------------------------
-        // Inventory range setup (Inventory1..Inventory4)
-        // ------------------------------------------------------------------------
-        const int FirstBag = (int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.Inventory1;
-        const int BagPages = 4;
-
-        // ------------------------------------------------------------------------
-        // Scan all bag containers for matching item IDs
-        // ------------------------------------------------------------------------
-        for (int i = 0; i < BagPages; i++)
+        for (int i = 0; i < 4; i++)
         {
-            var type = (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)(FirstBag + i);
-            var cont = inv->GetInventoryContainer(type);
-            if (cont == null || cont->Size == 0)
-                continue;
+            var cont = inv->GetInventoryContainer(
+                (FFXIVClientStructs.FFXIV.Client.Game.InventoryType)
+                ((int)FFXIVClientStructs.FFXIV.Client.Game.InventoryType.Inventory1 + i));
+            if (cont == null) continue;
 
-            // --------------------------------------------------------------------
-            // Iterate each slot and check for matching item IDs
-            // --------------------------------------------------------------------
-            for (int s = 0; s < cont->Size; s++)
+            for (int s = 0, n = cont->Size; s < n; s++)
             {
                 var slot = cont->GetInventorySlot(s);
-                if (slot == null)
-                    continue;
-
-                // Match found — quantity check avoids transient empty slots
-                if (slot->ItemId == itemId && slot->Quantity > 0)
+                if (slot != null && slot->ItemId == itemId && slot->Quantity > 0)
                     return true;
             }
         }
-
-        // ------------------------------------------------------------------------
-        // No matching item found in any container
-        // ------------------------------------------------------------------------
         return false;
     }
 
-    /// <summary>
-    /// Slash-command entry: try to start a transfer immediately and echo a clear reason if not possible.
-    /// Does NOT open the UI; it uses the same preview logic as the window.
-    /// </summary>
+    /*
+     * ---------------------------------------------------------------------------
+     *  StartTransferFromCommand()
+     * ---------------------------------------------------------------------------
+     *  Entry point for the `/masswithdraw transfer` command.
+     *  Verifies all preconditions and launches the async transfer if possible.
+     * ---------------------------------------------------------------------------
+    */
     public void StartTransferFromCommand()
     {
-        // Retainer must be open
         if (!IsInventoryRetainerOpen())
+        { Plugin.ChatGui.PrintError("[MassWithdraw] Open your Retainer’s inventory window first."); return; }
+
+        var (retStacks, bagFree, willMove, _) = ComputeTransferPreview(DelayMsDefault);
+        if (willMove <= 0)
         {
-            Plugin.ChatGui.PrintError("[MassWithdraw] Open your Retainer’s inventory window first.");
-            return;
-        }
-
-        var p = ComputeTransferPreview(DelayMsDefault);
-
-        if (p.willMove <= 0)
-        {
-            string reason;
-
-            if (p.bagFree == 0 && p.retStacks > 0)
-                reason = "Inventory full.";
-            else if (p.retStacks == 0)
-                reason = "No items eligible to transfer (check filters).";
-            else
-                reason = "Nothing to transfer.";
-
-            Plugin.ChatGui.PrintError($"[MassWithdraw] {reason}");
+            var msg = (bagFree == 0 && retStacks > 0) ? "Inventory full."
+                    : (retStacks == 0)                ? "No items eligible to transfer (check filters)."
+                                                      : "Nothing to transfer.";
+            Plugin.ChatGui.PrintError($"[MassWithdraw] {msg}");
             return;
         }
 
         StartMoveAllRetainerItems(DelayMsDefault);
         Plugin.ChatGui.Print("[MassWithdraw] Transfer started…");
     }
-
 }

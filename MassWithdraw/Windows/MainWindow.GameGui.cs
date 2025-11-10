@@ -1,3 +1,17 @@
+/*
+===============================================================================
+  MassWithdraw – MainWindow.GameGui.cs
+===============================================================================
+
+  Overview
+  ---------------------------------------------------------------------------
+  Game-facing helpers for locating the Retainer Inventory UI (small/large)
+  and anchoring the plugin window beside it. All interactions here read from
+  FFXIV’s UI tree via FFXIVClientStructs and Dalamud’s GameGui.
+  
+===============================================================================
+*/
+
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -7,85 +21,78 @@ namespace MassWithdraw.Windows;
 
 public partial class MainWindow
 {
-    // Cache last snapped position so we don't spam Position every frame.
+    // Stores the last position we snapped to (prevents redundant Position writes).
     private Vector2 _lastAnchor = new(float.NaN, float.NaN);
 
-    // The two possible retainer inventory add-ons (small / large).
+    // Known retainer addon names
     private static readonly string[] RetainerAddonNames = { "InventoryRetainer", "InventoryRetainerLarge" };
 
-    /// <summary>
-    /// Returns true if any “Retainer Inventory” addon (small/large, any index 0..1) is visible.
-    /// </summary>
+    // True when any visible Retainer Inventory addon exists.
     internal unsafe bool IsInventoryRetainerOpen()
         => TryGetVisibleRetainerRect(out _, out _);
 
-    /// <summary>
-    /// Try to locate a visible Retainer Inventory addon and return its screen rect.
-    /// </summary>
-    /// <param name="pos">Top-left position in screen space.</param>
-    /// <param name="size">Width/height of the root node.</param>
-    /// <returns>True when a visible addon is found and rect is valid.</returns>
+    /*
+     * ---------------------------------------------------------------------------
+     *  TryGetVisibleRetainerRect()
+     * ---------------------------------------------------------------------------
+     *  Attempts to find a visible Retainer Inventory addon and returns its
+     *  top-left position and *scaled* size (ScaleX/ScaleY applied).
+     *  Returns true on success, false otherwise.
+     * ---------------------------------------------------------------------------
+    */
     private static unsafe bool TryGetVisibleRetainerRect(out Vector2 pos, out Vector2 size)
     {
-        // Defaults
-        pos  = Vector2.Zero;
-        size = Vector2.Zero;
+        pos = size = Vector2.Zero;
 
-        // Dalamud keeps two “UI roots” (0 = main, 1 = overlay). Search both.
-        for (int rootIndex = 0; rootIndex <= 1; rootIndex++)
+        for (int root = 0; root < 2; root++)
         {
             foreach (var name in RetainerAddonNames)
             {
-                var addon = Plugin.GameGui.GetAddonByName(name, rootIndex);
-                if (addon == null || addon.Address == nint.Zero)
-                    continue;
+                var addon = Plugin.GameGui.GetAddonByName(name, root);
+                if (addon == null || addon.Address == nint.Zero) continue;
 
                 var unit = (AtkUnitBase*)addon.Address;
-                if (unit == null || !unit->IsVisible || unit->RootNode == null)
-                    continue;
+                var node = unit == null ? null : unit->RootNode;
+                if (unit == null || !unit->IsVisible || node == null) continue;
 
-                var w = unit->RootNode->Width;
-                var h = unit->RootNode->Height;
-                if (w <= 0 || h <= 0)
-                    continue;
+                int w = node->Width, h = node->Height;
+                if (w <= 0 || h <= 0) continue;
 
-                pos  = new Vector2(unit->X, unit->Y);
-                float sx = unit->RootNode->ScaleX <= 0f ? 1f : unit->RootNode->ScaleX;
-                float sy = unit->RootNode->ScaleY <= 0f ? 1f : unit->RootNode->ScaleY;
-                size = new Vector2(w * sx, h * sy);
+                float sx = node->ScaleX > 0f ? node->ScaleX : 1f;
+                float sy = node->ScaleY > 0f ? node->ScaleY : 1f;
+
+                pos  = new(unit->X, unit->Y);
+                size = new(w * sx, h * sy);
                 return true;
             }
         }
-
         return false;
     }
 
-    /// <summary>
-    /// Snap this window to the right of the visible Retainer Inventory addon.
-    /// Writes <see cref="Position"/> only when the target position actually changes,
-    /// to avoid redundant window updates and flicker.
-    /// </summary>
+    /*
+     * ---------------------------------------------------------------------------
+     *  AnchorToRetainer()
+     * ---------------------------------------------------------------------------
+     *  Snaps this window to the right edge of the visible Retainer Inventory.
+     *  Applies DPI scale to the horizontal gap, and skips writing Position unless
+     *  the target changed meaningfully (anti-jitter).
+     * ---------------------------------------------------------------------------
+    */
     private void AnchorToRetainer()
     {
-        if (!TryGetVisibleRetainerRect(out var pos, out var size))
-            return;
+        if (!TryGetVisibleRetainerRect(out var pos, out var size)) return;
 
-        float gap = AnchorGapX * ImGui.GetIO().FontGlobalScale;
-        var target = new Vector2(pos.X + size.X + gap, pos.Y);
+        var target = new Vector2(
+            pos.X + size.X + AnchorGapX * ImGui.GetIO().FontGlobalScale,
+            pos.Y
+        );
 
-        const float SnapThreshold = 1f; // px
-        bool haveLast = !float.IsNaN(_lastAnchor.X);
+        const float snap2 = 1f * 1f; // squared threshold
+        if (!float.IsNaN(_lastAnchor.X) && Vector2.DistanceSquared(target, _lastAnchor) < snap2) return;
 
-        if (haveLast && Vector2.DistanceSquared(target, _lastAnchor) < SnapThreshold * SnapThreshold)
-            return; // no meaningful movement; keep current Position
-
-        Position    = target;
-        _lastAnchor = target;
+        Position = _lastAnchor = target;
     }
 
-    /// <summary>
-    /// Call this if you let the user drag the window manually and want to
-    /// allow the next <see cref="AnchorToRetainer"/> to re-snap immediately.
-    /// </summary>
+    // If the user drags the window manually, call this to allow the next AnchorToRetainer() to snap immediately.
     private void ResetAnchorCache() => _lastAnchor = new(float.NaN, float.NaN);
 }

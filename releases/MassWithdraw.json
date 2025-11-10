@@ -2,13 +2,13 @@
   "Author": "Kanwa",
   "Name": "Mass Withdraw",
   "InternalName": "MassWithdraw",
-  "AssemblyVersion": "1.0.1.2",
-  "Description": "Withdraw all items from your retainer into your inventory with preview, async pacing, and unique-item protection.",
+  "AssemblyVersion": "1.0.1.3",
+  "Description": "Withdraw all items from your retainer into your inventory.",
   "ApplicableVersion": "any",
   "Tags": [
     "retainer",
     "inventory",
-    "utility"
+    "withdraw"
   ],
   "DalamudApiLevel": 13,
   "LoadRequiredState": 0,
@@ -16,6 +16,7 @@
   "CanUnloadAsync": false,
   "LoadPriority": 0,
   "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png",
-  "Punchline": "Fast and safe retainer inventory withdraw.",
+  "Punchline": "Withdraw all items from your retainer into your inventory.",
+  "Changelog": "- 1.0.1.3 — Added additional item categories for filtering (All Gear, Materia, Consumables, Crafting Mats)",
   "AcceptsFeedback": true
 }
