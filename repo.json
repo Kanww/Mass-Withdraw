@@ -8,13 +8,14 @@
     "RepoUrl": "https://kanww.github.io/Mass-Withdraw/",
     "Tags": ["retainer", "inventory", "withdraw"],
     "DalamudApiLevel": 13,
-    "DownloadLinkInstall": "https://kanww.github.io/Mass-Withdraw/releases/latest.zip",
-    "DownloadLinkTesting": "https://kanww.github.io/Mass-Withdraw/releases/latest.zip",
-    "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/latest.zip",
+    "DownloadLinkInstall": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.4.zip",
+    "DownloadLinkTesting": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.4.zip",
+    "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.4.zip",
     "LoadPriority": 0,
     "Punchline": "Fast and safe retainer inventory withdraw.",
-    "AssemblyVersion": "1.0.1.3",
-    "Changelog": "- 1.0.1.3 — Added additional item categories for filtering (All Gear, Materia, Consumables, Crafting Mats)",
-    "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png"
+    "AssemblyVersion": "1.0.1.4",
+    "Changelog": "- 1.0.1.4 — Added random delay on each withdraw to avoid actions that look non-human.",
+    "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png",
+    "LastUpdate": 1762798127
   }
 ]

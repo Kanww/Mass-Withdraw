@@ -73,13 +73,31 @@ public partial class MainWindow
     private TransferState _transfer = new();
     private CancellationTokenSource? _cts;
 
+    // Randomized pacing to avoid bot-like timing
+    private static readonly Random _rng = new();
+
     /*
     * ---------------------------------------------------------------------------
-    *  Category predicate functions
+    *  HumanizedDelay()
     * ---------------------------------------------------------------------------
-    *  These helpers classify an ItemRow into its broad logical category.
-    *  Used for filtering and previews.
+    *  ±25% jitter around the base delay, min 20ms floor
     * ---------------------------------------------------------------------------
+    */
+    private static int HumanizedDelay(int baseMs)
+    {
+        var span = Math.Max(20, (int)(baseMs * 0.25));
+        int jitter;
+        lock (_rng) jitter = _rng.Next(-span, span + 1);
+        return Math.Max(0, baseMs + jitter);
+    }
+
+    /*
+     * ---------------------------------------------------------------------------
+     *  Category predicate functions
+     * ---------------------------------------------------------------------------
+     *  These helpers classify an ItemRow into its broad logical category.
+     *  Used for filtering and previews.
+     * ---------------------------------------------------------------------------
     */
     private static bool IsNonWhiteGearRow(ItemRow row) =>
         row.EquipSlotCategory.RowId > 0 && row.Rarity > 1;
@@ -293,7 +311,9 @@ public partial class MainWindow
                     }
 
                     _transfer.Moved++;
-                    if (delayMs > 0) await Task.Delay(delayMs, token);
+                    if ((_transfer.Moved % 17) == 0 && delayMs > 0)
+                        await Task.Delay(HumanizedDelay(delayMs + 250), token);
+                    if (delayMs > 0) await Task.Delay(HumanizedDelay(delayMs), token);
                 }
             }
 
