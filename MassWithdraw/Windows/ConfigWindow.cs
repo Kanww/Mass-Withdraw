@@ -1,19 +1,4 @@
-﻿/*
-===============================================================================
-  MassWithdraw – ConfigWindow.cs
-===============================================================================
-
-  Overview
-  ---------------------------------------------------------------------------
-  Defines the configuration window UI for MassWithdraw.
-  This window allows the user to change persistent settings, such as whether
-  the plugin’s main window should automatically open when a Retainer Inventory
-  is visible.
-
-===============================================================================
-*/
-
-using System;
+﻿using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
@@ -22,18 +7,13 @@ namespace MassWithdraw.Windows;
 
 public sealed class ConfigWindow : Window, IDisposable
 {
-    // Reference to the shared plugin configuration instance.
     private readonly Configuration configuration;
 
-    /*
-     * ---------------------------------------------------------------------------
-     *  Constructor
-     * ---------------------------------------------------------------------------
-     *  Initializes the configuration window and sets fixed UI flags.
-     * ---------------------------------------------------------------------------
-    */
-    public ConfigWindow(Plugin plugin)
-        : base("Mass Withdraw — Settings###MassWithdrawConfig")
+    /**
+     * * Initializes the configuration window with layout flags and plugin configuration reference.
+     * <param name="plugin">The parent plugin instance providing access to configuration data</param>
+     */
+    public ConfigWindow(Plugin plugin): base("Mass Withdraw — Settings###MassWithdrawConfig")
     {
         Flags = ImGuiWindowFlags.NoResize
               | ImGuiWindowFlags.NoCollapse
@@ -44,17 +24,16 @@ public sealed class ConfigWindow : Window, IDisposable
         configuration = plugin.Configuration;
     }
 
-    public void Dispose() { /* No cleanup required */ }
+    /**
+     * * Disposes of resources used by the ConfigWindow instance.
+     *   Currently performs no cleanup actions.
+     */
+    public void Dispose() { }
 
-    /*
-     * ---------------------------------------------------------------------------
-     *  Draw()
-     * ---------------------------------------------------------------------------
-     *  Renders the configuration UI. Contains a single toggle option:
-     *      [x] Auto-open when Retainer Inventory is visible
-     *  Updates the configuration in real-time and persists it immediately.
-     * ---------------------------------------------------------------------------
-    */
+    /**
+     * * Renders the configuration window UI.
+     *   Displays toggles and settings allowing user customization of plugin behavior.
+     */
     public override void Draw()
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(8f, 8f));

@@ -8,14 +8,14 @@
     "RepoUrl": "https://kanww.github.io/Mass-Withdraw/",
     "Tags": ["retainer", "inventory", "withdraw"],
     "DalamudApiLevel": 13,
-    "DownloadLinkInstall": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.4.zip",
-    "DownloadLinkTesting": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.4.zip",
-    "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.4.zip",
+    "DownloadLinkInstall": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.5.zip",
+    "DownloadLinkTesting": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.5.zip",
+    "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.5.zip",
     "LoadPriority": 0,
     "Punchline": "Fast and safe retainer inventory withdraw.",
-    "AssemblyVersion": "1.0.1.4",
-    "Changelog": "- 1.0.1.4 — Added random delay on each withdraw to avoid actions that look non-human.",
+    "AssemblyVersion": "1.0.1.5",
+    "Changelog": "- 1.0.1.5 — Refined transfer and preview logic:\n  • Removed ETA display.\n  • Fixed IsFilterEnabled logic check.\n  • Fixed preview not merging items into existing partial stacks.\n  • Fixed preview repeatedly rescanning player bags for Unique items.\n  • Fixed crash when retainer window was closed mid-transfer.\n  • Optimized FindFreeBagSlot() to avoid redundant full scans.",
     "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png",
-    "LastUpdate": 1762798127
+    "LastUpdate": 1731361225
   }
 ]

@@ -1,5 +1,12 @@
 ## 🧾 Changelog
 
+- **1.0.1.5** — Refined transfer and preview logic:
+  • Removed ETA display.
+  • Fixed IsFilterEnabled logic check.
+  • Fixed preview not merging items into existing partial stacks.
+  • Fixed preview repeatedly rescanning player bags for Unique items.
+  • Fixed crash when retainer window was closed mid-transfer.
+  • Optimized FindFreeBagSlot() to avoid redundant full scans.
 - **1.0.1.4** — Added random delay on each withdraw to avoid actions that look non-human. 
 - **1.0.1.3** — Added additional item categories for filtering (All Gear, Materia, Consumables, Crafting Mats)
 - **1.0.1.2** — Fixed several UI and command improvements:  

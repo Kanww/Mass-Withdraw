@@ -2,7 +2,7 @@
   "Author": "Kanwa",
   "Name": "Mass Withdraw",
   "InternalName": "MassWithdraw",
-  "AssemblyVersion": "1.0.1.4",
+  "AssemblyVersion": "1.0.1.5",
   "Description": "Withdraw all items from your retainer into your inventory.",
   "ApplicableVersion": "any",
   "Tags": [
@@ -17,6 +17,6 @@
   "LoadPriority": 0,
   "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png",
   "Punchline": "Withdraw all items from your retainer into your inventory.",
-  "Changelog": "- 1.0.1.4 — Added random delay on each withdraw to avoid actions that look non-human.",
+  "Changelog": "- 1.0.1.5 — Refined transfer and preview logic:\n  • Removed ETA display.\n  • Fixed IsFilterEnabled logic check.\n  • Fixed preview not merging items into existing partial stacks.\n  • Fixed preview repeatedly rescanning player bags for Unique items.\n  • Fixed crash when retainer window was closed mid-transfer.\n  • Optimized FindFreeBagSlot() to avoid redundant full scans.",
   "AcceptsFeedback": true
 }

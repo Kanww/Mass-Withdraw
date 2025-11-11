@@ -1,17 +1,3 @@
-/*
-===============================================================================
-  MassWithdraw – MainWindow.GameGui.cs
-===============================================================================
-
-  Overview
-  ---------------------------------------------------------------------------
-  Game-facing helpers for locating the Retainer Inventory UI (small/large)
-  and anchoring the plugin window beside it. All interactions here read from
-  FFXIV’s UI tree via FFXIVClientStructs and Dalamud’s GameGui.
-  
-===============================================================================
-*/
-
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -21,78 +7,83 @@ namespace MassWithdraw.Windows;
 
 public partial class MainWindow
 {
-    // Stores the last position we snapped to (prevents redundant Position writes).
+
     private Vector2 _lastAnchor = new(float.NaN, float.NaN);
-
-    // Known retainer addon names
-    private static readonly string[] RetainerAddonNames = { "InventoryRetainer", "InventoryRetainerLarge" };
-
-    // True when any visible Retainer Inventory addon exists.
-    internal unsafe bool IsInventoryRetainerOpen()
-        => TryGetVisibleRetainerRect(out _, out _);
-
-    /*
-     * ---------------------------------------------------------------------------
-     *  TryGetVisibleRetainerRect()
-     * ---------------------------------------------------------------------------
-     *  Attempts to find a visible Retainer Inventory addon and returns its
-     *  top-left position and *scaled* size (ScaleX/ScaleY applied).
-     *  Returns true on success, false otherwise.
-     * ---------------------------------------------------------------------------
-    */
-    private static unsafe bool TryGetVisibleRetainerRect(out Vector2 pos, out Vector2 size)
+    private static readonly string[] RetainerAddonNames =
     {
-        pos = size = Vector2.Zero;
+        "InventoryRetainer",
+        "InventoryRetainerLarge"
+    };
 
-        for (int root = 0; root < 2; root++)
+    /**
+     * * Checks whether any retainer inventory window is currently open.
+     *   Used to ensure retainer UI elements are available before performing actions.
+     * <return type="bool">True if a retainer inventory window is open; otherwise, false</return>
+     */
+    internal unsafe bool IsRetainerUIOpen()
+    {
+        return TryGetRetainerUI(out _, out _);
+    }
+
+    /**
+     * * Attempts to locate the active retainer inventory addon and retrieve its position and size.
+     * <param name="topLeft">Outputs the top-left screen coordinates of the retainer UI</param>
+     * <param name="size">Outputs the pixel dimensions of the retainer UI</param>
+     * <return type="bool">True if a visible and valid retainer UI was found; otherwise, false</return>
+     */
+    private static unsafe bool TryGetRetainerUI(out Vector2 topLeft, out Vector2 size)
+    {
+        topLeft = size = Vector2.Zero;
+
+        for (int rootIndex = 0; rootIndex < 2; rootIndex++)
         {
-            foreach (var name in RetainerAddonNames)
+            foreach (var addonName in RetainerAddonNames)
             {
-                var addon = Plugin.GameGui.GetAddonByName(name, root);
-                if (addon == null || addon.Address == nint.Zero) continue;
+                var addon = Plugin.GameGui.GetAddonByName(addonName, rootIndex);
+                if (addon == null || addon.Address == nint.Zero)
+                    continue;
 
                 var unit = (AtkUnitBase*)addon.Address;
-                var node = unit == null ? null : unit->RootNode;
-                if (unit == null || !unit->IsVisible || node == null) continue;
+                if (unit == null || !unit->IsVisible)
+                    continue;
 
-                int w = node->Width, h = node->Height;
-                if (w <= 0 || h <= 0) continue;
+                var rootNode = unit->RootNode;
+                if (rootNode == null)
+                    continue;
 
-                float sx = node->ScaleX > 0f ? node->ScaleX : 1f;
-                float sy = node->ScaleY > 0f ? node->ScaleY : 1f;
+                int width  = rootNode->Width;
+                int height = rootNode->Height;
+                if (width <= 0 || height <= 0)
+                    continue;
 
-                pos  = new(unit->X, unit->Y);
-                size = new(w * sx, h * sy);
+                float sx = (rootNode->ScaleX > 0f && float.IsFinite(rootNode->ScaleX)) ? rootNode->ScaleX : 1f;
+                float sy = (rootNode->ScaleY > 0f && float.IsFinite(rootNode->ScaleY)) ? rootNode->ScaleY : 1f;
+
+                topLeft = new Vector2(unit->X, unit->Y);
+                size    = new Vector2(width  * sx, height * sy);
                 return true;
             }
         }
+
         return false;
     }
 
-    /*
-     * ---------------------------------------------------------------------------
-     *  AnchorToRetainer()
-     * ---------------------------------------------------------------------------
-     *  Snaps this window to the right edge of the visible Retainer Inventory.
-     *  Applies DPI scale to the horizontal gap, and skips writing Position unless
-     *  the target changed meaningfully (anti-jitter).
-     * ---------------------------------------------------------------------------
-    */
+    /**
+     * * Positions the MassWithdraw window next to the open retainer inventory window.
+     *   Automatically aligns the UI when the retainer interface is visible.
+     */
     private void AnchorToRetainer()
     {
-        if (!TryGetVisibleRetainerRect(out var pos, out var size)) return;
+        if (!TryGetRetainerUI(out var uiPos, out var uiSize))
+            return;
 
-        var target = new Vector2(
-            pos.X + size.X + AnchorGapX * ImGui.GetIO().FontGlobalScale,
-            pos.Y
-        );
+        float scaledGap = AnchorGapX * ImGui.GetIO().FontGlobalScale;
+        var targetPos = new Vector2(uiPos.X + uiSize.X + scaledGap, uiPos.Y);
 
-        const float snap2 = 1f * 1f; // squared threshold
-        if (!float.IsNaN(_lastAnchor.X) && Vector2.DistanceSquared(target, _lastAnchor) < snap2) return;
+        const float SNAP_DISTANCE_SQUARED = 1f;
+        if (!float.IsNaN(_lastAnchor.X) && Vector2.DistanceSquared(targetPos, _lastAnchor) < SNAP_DISTANCE_SQUARED)
+            return;
 
-        Position = _lastAnchor = target;
+        Position = _lastAnchor = targetPos;
     }
-
-    // If the user drags the window manually, call this to allow the next AnchorToRetainer() to snap immediately.
-    private void ResetAnchorCache() => _lastAnchor = new(float.NaN, float.NaN);
 }
