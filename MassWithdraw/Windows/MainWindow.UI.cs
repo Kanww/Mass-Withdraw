@@ -17,7 +17,10 @@ public partial class MainWindow : Window, IDisposable
     private const float HeaderIconTextSpacing  = 6f;
 
     private const int   transferDelayMs        = 400;
-
+    
+    private readonly Configuration configuration;
+    private readonly Action toggleConfigUi;
+    
     private const ImGuiWindowFlags WindowFlags =
         ImGuiWindowFlags.NoScrollbar |
         ImGuiWindowFlags.NoScrollWithMouse |
@@ -32,8 +35,11 @@ public partial class MainWindow : Window, IDisposable
     /**
      * * Initializes the main window with title, size constraints, and flags.
      */
-    public MainWindow(): base("Mass Withdraw", WindowFlags)
+    public MainWindow(Configuration configuration, Action toggleConfigUi): base("Mass Withdraw", WindowFlags)
     {
+        this.configuration = configuration;
+        this.toggleConfigUi = toggleConfigUi;
+
         RespectCloseHotkey = false;
 
         SizeConstraints = new()
@@ -59,12 +65,14 @@ public partial class MainWindow : Window, IDisposable
      */
     public override void Draw()
     {
-        AnchorToRetainer();
+        if (configuration.AnchorWindow)
+            AnchorToRetainer();
+        
         if (!IsRetainerUIOpen())
         { 
             if (transferSession.Running)
                 cancellationTokenSource?.Cancel();
-                
+
             IsOpen = false;
             return;
         }
@@ -145,36 +153,50 @@ public partial class MainWindow : Window, IDisposable
      */
     private void DrawIdleState(int itemsToMove, int transferStacks, int totalStacks, int inventoryFreeSlots, float contentWidth)
     {
+        // values
         var infoColor    = new Vector4(0.8f, 0.9f, 1f, 1f);
         var warningColor = new Vector4(1f, 0.8f, 0.3f, 1f);
+        bool isTransferable = itemsToMove > 0;
 
-        bool hasTransferableItems = itemsToMove > 0;
+        // precompute message
+        string msg = (totalStacks, transferStacks, inventoryFreeSlots) switch
+        {
+            (0, _, _) => "Retainer inventory is empty.",
+            (_, 0, _) => "No items eligible to transfer.",
+            (_, _, 0) => "Inventory full.",
+            _         => "Nothing to transfer."
+        };
 
-        if (hasTransferableItems)
+        // info message
+        if (isTransferable)
         {
             CenteredText($"Will move {itemsToMove} item{(itemsToMove == 1 ? "" : "s")}", infoColor);
             ImGui.Spacing();
         }
 
-        ImGui.SetCursorPosX(MathF.Max(8f, (contentWidth - ButtonWidth) * 0.5f + 8f));
+        // centered buttons
+        float buttonsWidth = ButtonWidth * 2f + ImGui.GetStyle().ItemSpacing.X;
+        float startX = MathF.Max(8f, (contentWidth - buttonsWidth) * 0.5f + 8f);
+        ImGui.SetCursorPosX(startX);
 
-        if (!hasTransferableItems) ImGui.BeginDisabled();
-        if (ImGui.Button("Transfer", new Vector2(ButtonWidth, 0)))
-            StartTransfer(transferDelayMs);
-        if (!hasTransferableItems) ImGui.EndDisabled();
+        ImGui.BeginGroup();
+        {
+            if (!isTransferable) ImGui.BeginDisabled();
+            if (ImGui.Button("Transfer", new Vector2(ButtonWidth, 0)))
+                StartTransfer(transferDelayMs);
+            if (!isTransferable) ImGui.EndDisabled();
 
-        if (!hasTransferableItems)
+            ImGui.SameLine();
+
+            if (IconButton("##ConfigButton", FontAwesomeIcon.Cog, "Config", new Vector2(ButtonWidth, 0)))
+                this.toggleConfigUi?.Invoke();
+        }
+        ImGui.EndGroup();
+
+        // warning message
+        if (!isTransferable)
         {
             ImGui.Spacing();
-
-            string msg = (totalStacks, transferStacks, inventoryFreeSlots) switch
-            {
-                (0, _, _) => "Retainer inventory is empty.",
-                (_, 0, _) => "No items eligible to transfer.",
-                (_, _, 0) => "Inventory full.",
-                _         => "Nothing to transfer."
-            };
-
             CenteredText(msg, warningColor);
         }
 
@@ -314,6 +336,55 @@ public partial class MainWindow : Window, IDisposable
         else
             ImGui.TextUnformatted(text);
     }
+
+    /**
+     * * Draws a centered ImGui button containing both an icon and a text label.
+     * <param name="id">Unique ImGui identifier for the button (e.g., "##ConfigButton")</param>
+     * <param name="icon">FontAwesomeIcon enum value to display inside the button</param>
+     * <param name="label">Text label displayed next to the icon</param>
+     * <param name="size">Button size (width and height)</param>
+     * <return type="bool">True if the button was clicked</return>
+     */
+    private bool IconButton(string id, FontAwesomeIcon icon, string label, Vector2 size)
+    {
+        var style = ImGui.GetStyle();
+        bool clicked = ImGui.Button(id, size);
+
+        var drawList = ImGui.GetWindowDrawList();
+        var rectMin = ImGui.GetItemRectMin();
+        var rectMax = ImGui.GetItemRectMax();
+        uint textColor = ImGui.GetColorU32(ImGuiCol.Text);
+
+        // get icon and label sizes
+        ImGui.PushFont(UiBuilder.IconFont);
+        string iconStr = icon.ToIconString();
+        var iconSize = ImGui.CalcTextSize(iconStr);
+        ImGui.PopFont();
+
+        var labelSize = ImGui.CalcTextSize(label);
+
+        float totalWidth = iconSize.X + 6f + labelSize.X;
+
+        // center horizontally inside the button
+        float startX = rectMin.X + (size.X - totalWidth) * 0.5f;
+
+        // center vertically
+        float centerY = (rectMin.Y + rectMax.Y) * 0.5f;
+        float iconY = centerY - iconSize.Y * 0.5f;
+        float labelY = centerY - labelSize.Y * 0.5f;
+
+        // draw icon
+        ImGui.PushFont(UiBuilder.IconFont);
+        drawList.AddText(new Vector2(startX, iconY), textColor, iconStr);
+        ImGui.PopFont();
+
+        // draw label next to icon
+        float labelX = startX + iconSize.X + 6f;
+        drawList.AddText(new Vector2(labelX, labelY), textColor, label);
+
+        return clicked;
+    }
+
 
 #endregion
 }

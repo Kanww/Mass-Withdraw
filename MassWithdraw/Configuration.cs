@@ -18,6 +18,8 @@ public class Configuration : IPluginConfiguration
     public bool IsConfigWindowMovable { get; set; } = true;
     public bool AutoOpenOnRetainer { get; set; } = true;
 
+    public bool AnchorWindow { get; set; } = true;
+
     /*
      *  Call this method to immediately save the configuration state to disk.
      */

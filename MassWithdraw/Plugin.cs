@@ -28,7 +28,7 @@ public sealed class Plugin : IDalamudPlugin
     public readonly WindowSystem WindowSystem = new("MassWithdraw");
 
     private ConfigWindow ConfigWindow { get; init; }
-    private MainWindow MainWindow { get; init; }
+    public MainWindow MainWindow { get; init; }
     private RetainerWatcher? retainerWatcher;
 
     public Plugin()
@@ -36,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
         ConfigWindow = new ConfigWindow(this);
-        MainWindow = new MainWindow();
+        MainWindow = new MainWindow(Configuration, ToggleConfigUi);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
@@ -82,7 +82,16 @@ public sealed class Plugin : IDalamudPlugin
         var a = (args ?? string.Empty).Trim();
 
         if (a.Length == 0)
+        {
+            if (!this.MainWindow.IsRetainerUIOpen())
+            {
+                Plugin.ChatGui.PrintError("[MassWithdraw] Open your Retainer’s inventory window first.");
+                return;
+            }
+
+            this.MainWindow.IsOpen = true;
             return;
+        }
 
         if (a.StartsWith("transfer", StringComparison.OrdinalIgnoreCase))
         {

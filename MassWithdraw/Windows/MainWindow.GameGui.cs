@@ -8,7 +8,7 @@ namespace MassWithdraw.Windows;
 public partial class MainWindow
 {
 
-    private Vector2 _lastAnchor = new(float.NaN, float.NaN);
+    private Vector2 lastAnchor = new(float.NaN, float.NaN);
     private static readonly string[] RetainerAddonNames =
     {
         "InventoryRetainer",
@@ -81,9 +81,18 @@ public partial class MainWindow
         var targetPos = new Vector2(uiPos.X + uiSize.X + scaledGap, uiPos.Y);
 
         const float SNAP_DISTANCE_SQUARED = 1f;
-        if (!float.IsNaN(_lastAnchor.X) && Vector2.DistanceSquared(targetPos, _lastAnchor) < SNAP_DISTANCE_SQUARED)
+        if (!float.IsNaN(lastAnchor.X) && Vector2.DistanceSquared(targetPos, lastAnchor) < SNAP_DISTANCE_SQUARED)
             return;
 
-        Position = _lastAnchor = targetPos;
+        Position = lastAnchor = targetPos;
+    }
+    
+    /**
+     * * Clears the current anchor state so the window can be moved freely.
+     */
+    public void ClearAnchor()
+    {
+        Position = null;
+        lastAnchor = new(float.NaN, float.NaN);
     }
 }

@@ -755,7 +755,7 @@ public partial class MainWindow
         lock (delayRandom)
         {
             roll = delayRandom.Next(0, 100);
-            if (roll < 7) extra = delayRandom.Next(1000, 2001);
+            if (roll < 7) extra = delayRandom.Next(100, 250);
         }
 
         if (extra > 0)

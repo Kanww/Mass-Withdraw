@@ -8,6 +8,7 @@ namespace MassWithdraw.Windows;
 public sealed class ConfigWindow : Window, IDisposable
 {
     private readonly Configuration configuration;
+    private readonly Plugin plugin;
 
     /**
      * * Initializes the configuration window with layout flags and plugin configuration reference.
@@ -21,6 +22,7 @@ public sealed class ConfigWindow : Window, IDisposable
               | ImGuiWindowFlags.NoScrollWithMouse
               | ImGuiWindowFlags.AlwaysAutoResize;
 
+        this.plugin = plugin; 
         configuration = plugin.Configuration;
     }
 
@@ -43,6 +45,20 @@ public sealed class ConfigWindow : Window, IDisposable
         {
             configuration.AutoOpenOnRetainer = autoOpen;
             configuration.Save();
+        }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        var anchor = configuration.AnchorWindow;
+        if (ImGui.Checkbox("Anchor window next to Retainer Inventory", ref anchor))
+        {
+            configuration.AnchorWindow = anchor;
+            configuration.Save();
+
+            if (!anchor)
+                plugin.MainWindow.ClearAnchor();
         }
 
         ImGui.PopStyleVar();

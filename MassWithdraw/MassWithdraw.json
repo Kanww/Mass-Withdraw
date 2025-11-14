@@ -10,5 +10,5 @@
     "withdraw"
   ],
   "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png",
-  "Changelog": "- 1.0.1.5 — Refined transfer and preview logic:\n  • Removed ETA display.\n  • Fixed IsFilterEnabled logic check.\n  • Fixed preview not merging items into existing partial stacks.\n  • Fixed preview repeatedly rescanning player bags for Unique items.\n  • Fixed crash when retainer window was closed mid-transfer.\n  • Optimized FindFreeBagSlot() to avoid redundant full scans."
+  "Changelog": "- 1.0.1.6 — UI and usability improvements:\n  • Added a Config button next to the Transfer button in the main window.\n  • Added an option to toggle window anchoring directly from the Retainer Inventory."
 }
