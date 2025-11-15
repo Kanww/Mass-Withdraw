@@ -267,7 +267,7 @@ public partial class MainWindow : Window, IDisposable
         ImGui.Spacing();
 
         var categories = new (uint id, string label)[] {
-            (GearId,              "Any gear"),
+            (WhiteGearId,         "White gear"),
             (RareGearId,          "Rare gear"),
             (MateriaId,           "Materia"),
             (ConsumablesId,       "Consumables"),

@@ -16,14 +16,14 @@ public partial class MainWindow
 #region Config & IDs
     private const uint
         RareGearId           = 999001,
-        GearId               = 999002,
+        WhiteGearId          = 999002,
         MateriaId            = 999003,
         ConsumablesId        = 999004,
         CraftingMaterialsId  = 999005;
     private readonly Dictionary<uint, Func<ItemRow, bool>> categoryFilters = new()
     {
         [RareGearId]          = IsRareGear,
-        [GearId]              = IsGear,
+        [WhiteGearId]         = IsWhiteGear,
         [MateriaId]           = IsMateria,
         [ConsumablesId]       = IsConsumable,
         [CraftingMaterialsId] = IsCraftingMaterial,
@@ -127,14 +127,15 @@ public partial class MainWindow
 #region Category Filters
 
     /**
-     * * Determines whether the given item is gear
+     * * Determines whether the given item is a white gear
      * <param name="item">The item row to evaluate</param>
      * <return type="bool">True if the item is equippable gear; otherwise, false</return>
      */
-    private static bool IsGear(ItemRow item)
+    private static bool IsWhiteGear(ItemRow item)
     {
         bool isGear = item.EquipSlotCategory.RowId > 0;
-        return isGear;
+        bool isWhite = item.Rarity < 2;
+        return isGear && isWhite;
     }
 
     /**

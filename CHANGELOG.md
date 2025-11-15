@@ -1,5 +1,6 @@
 ## 🧾 Changelog
 
+- **1.0.1.7** — Changed the filter Any gear to White gear.
 - **1.0.1.6** — UI and usability improvements:
   • Added a Config button next to the Transfer button in the main window.
   • Added an option to toggle window anchoring directly from the Retainer Inventory.

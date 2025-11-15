@@ -10,5 +10,5 @@
     "withdraw"
   ],
   "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png",
-  "Changelog": "- 1.0.1.6 — UI and usability improvements:\n  • Added a Config button next to the Transfer button in the main window.\n  • Added an option to toggle window anchoring directly from the Retainer Inventory."
+  "Changelog": "- 1.0.1.7 — Changed the filter Any gear to White gear."
 }

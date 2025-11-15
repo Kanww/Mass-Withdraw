@@ -8,13 +8,13 @@
     "RepoUrl": "https://kanww.github.io/Mass-Withdraw/",
     "Tags": ["retainer", "inventory", "withdraw"],
     "DalamudApiLevel": 13,
-    "DownloadLinkInstall": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.6.zip",
-    "DownloadLinkTesting": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.6.zip",
-    "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.6.zip",
+    "DownloadLinkInstall": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.7.zip",
+    "DownloadLinkTesting": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.7.zip",
+    "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.7.zip",
     "LoadPriority": 0,
     "Punchline": "Fast and safe retainer inventory withdraw.",
-    "AssemblyVersion": "1.0.1.6",
-    "Changelog": "- 1.0.1.6 — UI and usability improvements:\n  • Added a Config button next to the Transfer button in the main window.\n  • Added an option to toggle window anchoring directly from the Retainer Inventory.",
+    "AssemblyVersion": "1.0.1.7",
+    "Changelog": "- 1.0.1.7 — Changed the filter Any gear to White gear.",
     "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png",
     "LastUpdate": 1763091321
   }

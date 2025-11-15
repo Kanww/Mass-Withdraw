@@ -2,7 +2,7 @@
   "Author": "Kanwa",
   "Name": "Mass Withdraw",
   "InternalName": "MassWithdraw",
-  "AssemblyVersion": "1.0.1.6",
+  "AssemblyVersion": "1.0.1.7",
   "Description": "Withdraw all items from your retainer into your inventory.",
   "ApplicableVersion": "any",
   "Tags": [
@@ -17,6 +17,6 @@
   "LoadPriority": 0,
   "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png",
   "Punchline": "Withdraw all items from your retainer into your inventory.",
-  "Changelog": "- 1.0.1.6 — UI and usability improvements:\n  • Added a Config button next to the Transfer button in the main window.\n  • Added an option to toggle window anchoring directly from the Retainer Inventory.",
+  "Changelog": "- 1.0.1.7 — Changed the filter Any gear to White gear.",
   "AcceptsFeedback": true
 }
