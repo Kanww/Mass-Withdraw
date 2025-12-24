@@ -7,7 +7,7 @@
     "ApplicableVersion": "any",
     "RepoUrl": "https://kanww.github.io/Mass-Withdraw/",
     "Tags": ["retainer", "inventory", "withdraw"],
-    "DalamudApiLevel": 13,
+    "DalamudApiLevel": 14,
     "DownloadLinkInstall": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.8.zip",
     "DownloadLinkTesting": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.8.zip",
     "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.8.zip",
