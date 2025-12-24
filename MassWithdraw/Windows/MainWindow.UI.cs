@@ -10,7 +10,6 @@ namespace MassWithdraw.Windows;
 public partial class MainWindow : Window, IDisposable
 {
 #region UI Constants & Flags
-
     private const float AnchorGapX             = 8f;
     private const float FilterPanelHeight      = 200f;
     private const float ButtonWidth            = 150f;
@@ -27,11 +26,9 @@ public partial class MainWindow : Window, IDisposable
         ImGuiWindowFlags.NoCollapse |
         ImGuiWindowFlags.NoResize |
         ImGuiWindowFlags.AlwaysAutoResize;
-
 #endregion
 
 #region Lifecycle
-
     /**
      * * Initializes the main window with title, size constraints, and flags.
      */
@@ -53,12 +50,9 @@ public partial class MainWindow : Window, IDisposable
      * * Disposes of resources used by the MainWindow instance.
      */
     public void Dispose() { }
-
 #endregion
 
 #region Draw Components
-
-
     /**
      * * Main rendering entry point for the window.
      *   Draws UI components based on transfer state.
@@ -272,6 +266,7 @@ public partial class MainWindow : Window, IDisposable
             (MateriaId,           "Materia"),
             (ConsumablesId,       "Consumables"),
             (CraftingMaterialsId, "Crafting mats"),
+            (SubmersiblePartsId,  "Submersible parts"),
         };
 
         foreach (var (id, label) in categories)
@@ -313,11 +308,9 @@ public partial class MainWindow : Window, IDisposable
         if (shouldDim)
             ImGui.PopStyleColor();
     }
-
 #endregion
 
 #region Utilities
-
     /**
      * * Displays centered text with optional color tint in the current ImGui window.
      * <param name="text">Text to be displayed</param>
@@ -384,7 +377,5 @@ public partial class MainWindow : Window, IDisposable
 
         return clicked;
     }
-
-
 #endregion
 }

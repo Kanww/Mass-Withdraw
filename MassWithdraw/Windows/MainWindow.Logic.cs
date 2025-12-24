@@ -19,7 +19,8 @@ public partial class MainWindow
         WhiteGearId          = 999002,
         MateriaId            = 999003,
         ConsumablesId        = 999004,
-        CraftingMaterialsId  = 999005;
+        CraftingMaterialsId  = 999005,
+        SubmersiblePartsId   = 999006;
     private readonly Dictionary<uint, Func<ItemRow, bool>> categoryFilters = new()
     {
         [RareGearId]          = IsRareGear,
@@ -27,9 +28,11 @@ public partial class MainWindow
         [MateriaId]           = IsMateria,
         [ConsumablesId]       = IsConsumable,
         [CraftingMaterialsId] = IsCraftingMaterial,
+        [SubmersiblePartsId]  = IsSubmersiblePart,
     };
     private static readonly HashSet<uint> materiaCategoryIds   = [57];
     private static readonly HashSet<uint> materialsCategoryIds = [44, 47, 48, 49, 50, 51, 52, 53, 54, 55, 58, 59];
+    private static readonly HashSet<uint> submersiblePartsCategoryIds = [79];
     private static readonly GameStructs.InventoryType[] RetainerPages =
     {
         GameStructs.InventoryType.RetainerPage1,
@@ -77,7 +80,6 @@ public partial class MainWindow
 #endregion
 
 #region Data Access & Timing
-
     /**
      * * Retrieves an item’s data row from the Excel sheet using its ID
      * <param name="itemId">The unique ID of the item to retrieve</param>
@@ -121,7 +123,6 @@ public partial class MainWindow
 
         return Math.Max(20, baseDelay + delayOffset);
     }
-
 #endregion
 
 #region Category Filters
@@ -187,10 +188,20 @@ public partial class MainWindow
 
         return isMaterial && hasNoAction;
     }
+
+    /**
+     * * Determines whether the given item is classified as submersible parts
+     * <param name="item">The item row to evaluate</param>
+     * <return type="bool">True if the item belongs to a known submersible parts search category</return>
+     */
+    private static bool IsSubmersiblePart(ItemRow item)
+    {
+        bool isSubmersiblePart = submersiblePartsCategoryIds.Contains(item.ItemSearchCategory.RowId);
+        return isSubmersiblePart;
+    }
 #endregion
 
 #region Filters & Counts
-
     /**
      * * Increases the stored count for the specified category by one
      * <param name="categoryId">The ID of the category to increment</param>
@@ -259,11 +270,9 @@ public partial class MainWindow
 
         return false;
     }
-
 #endregion
 
 #region Inventory Analysis
-
     /**
      * * Scans the player’s inventory to count free slots and stack capacities
      * <param name="inv">Pointer to the InventoryManager instance</param>
@@ -441,11 +450,9 @@ public partial class MainWindow
 
         return false;
     }
-
 #endregion
 
 #region Slot Selection
-
     /**
      * * Searches the player’s inventory for an existing partial stack of the specified item
      * <param name="itemId">The ID of the item to find a stackable slot for</param>
@@ -553,11 +560,9 @@ public partial class MainWindow
 
         return false;
     }
-
 #endregion
 
 #region Transfer
-
     /**
      * * Computes a summary of a potential transfer from retainer to inventory
      * <return type="object">A summary containing total stacks, eligible stacks, free inventory slots, and movable items</return>
@@ -739,8 +744,6 @@ public partial class MainWindow
         }
     }
 
-
-
     /**
      * * Applies a variable delay between item transfers to simulate human-like timing
      * <param name="transferDelayMs">Base delay (ms) between transfers.</param>
@@ -764,11 +767,9 @@ public partial class MainWindow
 
         await Task.Delay(GenerateHumanizedDelay(transferDelayMs), token);
     }
-
 #endregion
 
 #region Commands
-
     /**
      * * Entry point triggered by the user command to begin item transfer
      */
@@ -797,6 +798,5 @@ public partial class MainWindow
         StartTransfer(transferDelayMs);
         Plugin.ChatGui.Print("[MassWithdraw] Transfer started…");
     }
-
 #endregion
 }
