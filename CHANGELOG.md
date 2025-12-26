@@ -1,5 +1,6 @@
 ## 🧾 Changelog
 
+- **1.0.1.9** — Fixed performance issues and low FPS during mass withdraw operations.
 - **1.0.1.8** — Added filter for submarines part.
 - **1.0.1.7** — Changed the filter Any gear to White gear.
 - **1.0.1.6** — UI and usability improvements:

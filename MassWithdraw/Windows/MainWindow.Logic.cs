@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Lumina.Excel;
+using Dalamud.Plugin.Services;
 using GameStructs = FFXIVClientStructs.FFXIV.Client.Game;
 using ItemRow = Lumina.Excel.Sheets.Item;
 
@@ -72,8 +73,16 @@ public partial class MainWindow
     private bool isFilterPanelVisible = false;
     private readonly HashSet<uint> selectedCategoryIds = new();
     private readonly Dictionary<uint, int> retainerCategoryCounts = new();
+
     private readonly TransferState transferSession = new();
     private CancellationTokenSource? cancellationTokenSource;
+
+    private int transferDelayMsActive = 0;
+    private int currentRetainerPageIndex = 0;
+    private int currentRetainerSlotIndex = 0;
+    private HashSet<uint>? seenUniqueDuringRun;
+    private DateTime nextMoveAtUtc = DateTime.MinValue;
+
     private static readonly Random delayRandom = new();
     private int inventoryContainerOffset = 0;
     private int inventorySlotIndex = 0;
@@ -613,160 +622,156 @@ public partial class MainWindow
         ResetInventoryCursor();
 
         cancellationTokenSource = new CancellationTokenSource();
-        _ = RunTransfer(transferDelayMs, cancellationTokenSource.Token);
+        transferDelayMsActive = transferDelayMs;
+        currentRetainerPageIndex = 0;
+        currentRetainerSlotIndex = 0;
+        seenUniqueDuringRun = new HashSet<uint>();
+        nextMoveAtUtc = DateTime.UtcNow;
     }
 
-    /**
-     * * Executes the asynchronous transfer loop across all retainer pages
-     * <param name="transferDelayMs">Base delay (ms) between item moves for throttling</param>
-     * <param name="cancellationToken">Token used to cancel the running transfer</param>
-     * <return type="Task">A task representing the asynchronous transfer operation</return>
-     */
-    private async Task RunTransfer(int transferDelayMs, CancellationToken cancellationToken)
+    private void OnFrameworkUpdate(IFramework _)
     {
-        try
-        {
-            var seenUnique = new HashSet<uint>();
+        if (!transferSession.Running)
+            return;
 
-            unsafe
+        if (cancellationTokenSource == null || cancellationTokenSource.IsCancellationRequested)
+        {
+            StopTransfer($"[MassWithdraw] Cancelled. Moved so far: {transferSession.Moved} item(s).");
+            return;
+        }
+
+        if (!IsRetainerUIOpen())
+        {
+            StopTransfer($"[MassWithdraw] Stopped: retainer closed. Moved {transferSession.Moved} item(s).");
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if (now < nextMoveAtUtc)
+            return;
+
+        bool didMove = TryMoveOneItem();
+
+        if (!transferSession.Running)
+            return;
+
+        if (didMove)
+        {
+            System.Threading.Interlocked.Increment(ref transferSession.Moved);
+
+            int delay = GenerateHumanizedDelay(transferDelayMsActive);
+
+            int roll;
+            lock (delayRandom)
+                roll = delayRandom.Next(0, 100);
+
+            if (roll < 7)
             {
-                if (GameStructs.InventoryManager.Instance() == null)
-                {
-                    Plugin.ChatGui.Print("[MassWithdraw] InventoryManager not available.");
-                    return;
-                }
+                int extra;
+                lock (delayRandom)
+                    extra = delayRandom.Next(100, 250);
+
+                delay += GenerateHumanizedDelay(extra);
             }
 
-            foreach (var page in RetainerPages)
+            // small breather every 10 moves (helps FPS)
+            if (transferSession.Moved % 10 == 0)
+                delay += 250;
+
+            nextMoveAtUtc = now.AddMilliseconds(Math.Max(20, delay));
+        }
+        else
+        {
+            nextMoveAtUtc = now;
+        }
+    }
+
+    private void StopTransfer(string message)
+    {
+        transferSession.Running = false;
+
+        var cts = cancellationTokenSource;
+        cancellationTokenSource = null;
+        cts?.Dispose();
+
+        seenUniqueDuringRun?.Clear();
+        seenUniqueDuringRun = null;
+
+        Plugin.ChatGui.Print(message);
+    }
+
+    private unsafe bool TryMoveOneItem()
+    {
+        var inv = GameStructs.InventoryManager.Instance();
+        if (inv == null)
+        {
+            StopTransfer("[MassWithdraw] InventoryManager not available.");
+            return false;
+        }
+
+        seenUniqueDuringRun ??= new HashSet<uint>();
+
+        while (currentRetainerPageIndex < RetainerPages.Length)
+        {
+            var page = RetainerPages[currentRetainerPageIndex];
+            var container = inv->GetInventoryContainer(page);
+            if (container == null)
             {
-                if (!IsRetainerUIOpen())
-                {
-                    Plugin.ChatGui.Print($"[MassWithdraw] Stopped: retainer closed. Moved {transferSession.Moved} item(s).");
-                    return;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                int pageSize;
-                unsafe
-                {
-                    var inv = GameStructs.InventoryManager.Instance();
-                    var container = inv->GetInventoryContainer(page);
-                    if (container == null) continue;
-                    pageSize = container->Size;
-                }
-
-                for (int slot = 0; slot < pageSize; slot++)
-                {
-                    if (!IsRetainerUIOpen())
-                    {
-                        Plugin.ChatGui.Print($"[MassWithdraw] Stopped: retainer closed. Moved {transferSession.Moved} item(s).");
-                        return;
-                    }
-
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    uint itemId = 0;
-                    int quantity = 0;
-
-                    unsafe
-                    {
-                        var inv = GameStructs.InventoryManager.Instance();
-                        var container = inv->GetInventoryContainer(page);
-                        if (container == null) continue;
-
-                        var it = container->GetInventorySlot(slot);
-                        if (it == null || it->ItemId == 0 || it->Quantity == 0) continue;
-
-                        itemId = it->ItemId;
-                        quantity = it->Quantity;
-                    }
-
-                    var row = GetItemRowById(itemId);
-                    if (row == null || !MatchesTransferFilters(row.Value)) continue;
-
-                    if (row.Value.IsUnique && (!seenUnique.Add(itemId) || HasItemInInventory(itemId))) continue;
-
-                    bool moved = false;
-
-                    unsafe
-                    {
-                        GameStructs.InventoryType targetContainer;
-                        int targetSlot;
-
-                        if (!FindStackableSlot(itemId, out targetContainer, out targetSlot) &&
-                            !FindFreeBagSlot(out targetContainer, out targetSlot))
-                        {
-                            Plugin.ChatGui.Print($"[MassWithdraw] Stopped: no free bag space. Moved {transferSession.Moved} item(s).");
-                            return;
-                        }
-
-                        var inv = GameStructs.InventoryManager.Instance();
-                        var container = inv->GetInventoryContainer(page);
-                        if (container == null)
-                        {
-                            Plugin.ChatGui.Print($"[MassWithdraw] Stopped: retainer container unavailable.");
-                            return;
-                        }
-
-                        var currentSlot = container->GetInventorySlot(slot);
-                        if (currentSlot == null || currentSlot->ItemId != itemId || currentSlot->Quantity != quantity)
-                            continue;
-
-                        _ = inv->MoveItemSlot(page, (ushort)slot, targetContainer, (ushort)targetSlot, true);
-                        moved = true;
-                    }
-
-                    if (moved)
-                    {
-                        System.Threading.Interlocked.Increment(ref transferSession.Moved);
-                        await ThrottleTransfer(transferDelayMs, cancellationToken);
-                    }
-                }
+                currentRetainerPageIndex++;
+                currentRetainerSlotIndex = 0;
+                continue;
             }
 
-            Plugin.ChatGui.Print($"[MassWithdraw] Done. Moved total: {transferSession.Moved} item(s).");
+            int pageSize = container->Size;
+
+            while (currentRetainerSlotIndex < pageSize)
+            {
+                int slot = currentRetainerSlotIndex++;
+                var it = container->GetInventorySlot(slot);
+                if (it == null || it->ItemId == 0 || it->Quantity == 0)
+                    continue;
+
+                uint itemId = it->ItemId;
+                int quantity = it->Quantity;
+
+                var row = GetItemRowById(itemId);
+                if (row == null || !MatchesTransferFilters(row.Value))
+                    continue;
+
+                if (row.Value.IsUnique)
+                {
+                    if (!seenUniqueDuringRun.Add(itemId))
+                        continue;
+                    if (HasItemInInventory(itemId))
+                        continue;
+                }
+
+                GameStructs.InventoryType targetContainer;
+                int targetSlot;
+
+                if (!FindStackableSlot(itemId, out targetContainer, out targetSlot) &&
+                    !FindFreeBagSlot(out targetContainer, out targetSlot))
+                {
+                    StopTransfer($"[MassWithdraw] Stopped: no free bag space. Moved {transferSession.Moved} item(s).");
+                    return false;
+                }
+
+                var currentSlot = container->GetInventorySlot(slot);
+                if (currentSlot == null || currentSlot->ItemId != itemId || currentSlot->Quantity != quantity)
+                    return false;
+
+                _ = inv->MoveItemSlot(page, (ushort)slot, targetContainer, (ushort)targetSlot, true);
+                return true;
+            }
+
+            currentRetainerPageIndex++;
+            currentRetainerSlotIndex = 0;
         }
-        catch (OperationCanceledException)
-        {
-            Plugin.ChatGui.Print($"[MassWithdraw] Cancelled. Moved so far: {transferSession.Moved} item(s).");
-        }
-        catch (Exception ex)
-        {
-            Plugin.ChatGui.Print($"[MassWithdraw] Error in async move: {ex.Message}");
-        }
-        finally
-        {
-            transferSession.Running = false;
-            var cts = cancellationTokenSource;
-            cancellationTokenSource = null;
-            cts?.Dispose();
-        }
+
+        StopTransfer($"[MassWithdraw] Done. Moved total: {transferSession.Moved} item(s).");
+        return false;
     }
 
-    /**
-     * * Applies a variable delay between item transfers to simulate human-like timing
-     * <param name="transferDelayMs">Base delay (ms) between transfers.</param>
-     * <param name="token">Cancellation token to interrupt the delay if needed</param>
-     * <return type="Task">A task that completes after the computed delay or cancellation</return>
-     */
-    private static async Task ThrottleTransfer(int transferDelayMs, CancellationToken token)
-    {
-        if (transferDelayMs <= 0) return;
-
-        int extra = 0;
-        int roll;
-        lock (delayRandom)
-        {
-            roll = delayRandom.Next(0, 100);
-            if (roll < 7) extra = delayRandom.Next(100, 250);
-        }
-
-        if (extra > 0)
-            await Task.Delay(GenerateHumanizedDelay(extra), token);
-
-        await Task.Delay(GenerateHumanizedDelay(transferDelayMs), token);
-    }
 #endregion
 
 #region Commands

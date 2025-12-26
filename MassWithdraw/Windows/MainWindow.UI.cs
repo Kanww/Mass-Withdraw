@@ -10,6 +10,8 @@ namespace MassWithdraw.Windows;
 public partial class MainWindow : Window, IDisposable
 {
 #region UI Constants & Flags
+    private bool frameworkHooked = false;
+
     private const float AnchorGapX             = 8f;
     private const float FilterPanelHeight      = 200f;
     private const float ButtonWidth            = 150f;
@@ -44,12 +46,25 @@ public partial class MainWindow : Window, IDisposable
             MinimumSize = new(280f, 0f),
             MaximumSize = new(float.MaxValue, float.MaxValue),
         };
+
+        if (!frameworkHooked)
+        {
+            Plugin.Framework.Update += OnFrameworkUpdate;
+            frameworkHooked = true;
+        }
     }
     
     /**
      * * Disposes of resources used by the MainWindow instance.
      */
-    public void Dispose() { }
+    public void Dispose()
+    {
+        if (frameworkHooked)
+        {
+            Plugin.Framework.Update -= OnFrameworkUpdate;
+            frameworkHooked = false;
+        }
+    }
 #endregion
 
 #region Draw Components

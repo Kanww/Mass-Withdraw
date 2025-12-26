@@ -10,5 +10,5 @@
     "withdraw"
   ],
   "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png",
-  "Changelog": "- 1.0.1.7 — Changed the filter Any gear to White gear."
+  "Changelog": "- 1.0.1.9 — Fixed performance issues and low FPS during mass withdraw operations."
 }

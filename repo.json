@@ -8,13 +8,13 @@
     "RepoUrl": "https://kanww.github.io/Mass-Withdraw/",
     "Tags": ["retainer", "inventory", "withdraw"],
     "DalamudApiLevel": 14,
-    "DownloadLinkInstall": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.8.zip",
-    "DownloadLinkTesting": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.8.zip",
-    "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.8.zip",
+    "DownloadLinkInstall": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.9.zip",
+    "DownloadLinkTesting": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.9.zip",
+    "DownloadLinkUpdate": "https://kanww.github.io/Mass-Withdraw/releases/1.0.1.9.zip",
     "LoadPriority": 0,
     "Punchline": "Fast and safe retainer inventory withdraw.",
-    "AssemblyVersion": "1.0.1.8",
-    "Changelog": "- 1.0.1.8 — Add a filter for submarines part.",
+    "AssemblyVersion": "1.0.1.9",
+    "Changelog": "- 1.0.1.9 — Fixed performance issues and low FPS during mass withdraw operations.",
     "IconUrl": "https://kanww.github.io/Mass-Withdraw/releases/icon128.png",
     "LastUpdate": 1766561400
   }
